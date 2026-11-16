@@ -20,6 +20,7 @@ class Player:
         """Put the player back at the start point (used when a loop resets)."""
         self.pos = pygame.Vector2(self.start)
         self.rect.topleft = (round(self.pos.x), round(self.pos.y))
+        self.carrying = None  # the Part being carried, or None (one at a time)
 
     def read_input(self):
         """Turn the keys being held down into a direction, like (1, 0) for right."""
