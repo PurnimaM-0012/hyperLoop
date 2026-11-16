@@ -8,12 +8,17 @@ import settings
 
 class Player:
     def __init__(self, start):
+        self.start = start  # remembered so every new loop begins here
         # 'pos' stores the exact position as decimals (e.g. 480.37).
         # 'rect' is the whole-pixel box used for drawing and collisions.
         # We need both: at 200 px/s one frame moves about 3.3 px, and a Rect
         # would throw away the .3 every frame, making movement uneven.
-        self.pos = pygame.Vector2(start)
         self.rect = pygame.Rect(0, 0, settings.PLAYER_SIZE, settings.PLAYER_SIZE)
+        self.reset()
+
+    def reset(self):
+        """Put the player back at the start point (used when a loop resets)."""
+        self.pos = pygame.Vector2(self.start)
         self.rect.topleft = (round(self.pos.x), round(self.pos.y))
 
     def read_input(self):
