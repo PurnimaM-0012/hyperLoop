@@ -18,16 +18,28 @@ PLAYING = "playing"
 WON = "won"
 
 
-def update_parts(player, parts, machine):
-    """Pick up a part on contact, install it on reaching the machine.
+def solid_rects(town, parts):
+    """Everything the player can't walk through this frame.
 
-    Parts and the machine are TRIGGERS: overlapping them makes something
-    happen, but they never block movement the way walls do.
+    Parts lying on the ground are solid, just like walls. Once picked up or
+    installed they are no longer on the ground, so they stop blocking.
+    """
+    return town.walls + [part.rect for part in parts if part.state == Part.ON_GROUND]
+
+
+def update_parts(player, parts, machine):
+    """Pick up a part you're touching, install it on reaching the machine.
+
+    Parts on the ground are solid, so the player stops exactly at their edge
+    and never overlaps them. To detect "touching", we check a copy of the
+    player's box grown by 2 pixels on every side (inflate(4, 4)).
+    The machine is still a TRIGGER: you walk into it, it doesn't block you.
     """
     if player.carrying is None:
         # Hands free: pick up the first part on the ground we're touching.
+        reach = player.rect.inflate(4, 4)
         for part in parts:
-            if part.state == Part.ON_GROUND and player.rect.colliderect(part.rect):
+            if part.state == Part.ON_GROUND and reach.colliderect(part.rect):
                 part.state = Part.CARRIED
                 player.carrying = part
                 break  # only one part at a time
@@ -112,7 +124,7 @@ def main():
         # 2. UPDATE ---------------------------------------------------
         # Once you've won, nothing moves and the timer stops.
         if game_state == PLAYING:
-            player.update(dt, town.walls)
+            player.update(dt, solid_rects(town, parts))
             update_parts(player, parts, machine)
 
             if machine.is_complete():
