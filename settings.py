@@ -15,8 +15,15 @@ PLAYER_SIZE = 24     # width and height of the player square, in pixels
 PLAYER_SPEED = 200   # pixels per second
 PLAYER_START = (480, 320)  # where every loop begins (later: next to the machine)
 
+# --- Progress (what survives a loop reset) ---
+START_LOOP_DURATION = 80  # seconds in the first loop (1 min 20 s, from the design doc)
+START_BAG_CAPACITY = 1    # bag slots at the start (used from Step 8)
+LEVEL_ORDER = ["prison"]  # fixed level order; more locations are added later
+LEVEL_NAMES = {"prison": "Prison"}
+SAVE_FILE = "save.json"   # stored next to main.py
+DEBUG_RACE_BONUS = 20     # seconds the debug key T adds ("pretend I won a race")
+
 # --- Time loop ---
-LOOP_DURATION = 80        # seconds in one loop (1 min 20 s, from the design doc)
 WARNING_TIME = 10         # the timer turns red at or below this many seconds
 RESET_MESSAGE_TIME = 1.5  # how long "The loop resets..." stays on screen
 

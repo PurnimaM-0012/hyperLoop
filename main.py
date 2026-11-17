@@ -2,20 +2,32 @@
 # Step 1: open a window and run the game loop.
 # Step 2: a player that walks around the town and stops at walls.
 # Step 3: an 80-second time loop that resets the player when it runs out.
-# Step 4: machine parts to collect and install; install all three to win.
+# Step 4: machine parts to collect and install; install all three to clear the level.
+# Step 5: progress that survives loop resets, saved to save.json.
 # Run it with:  python main.py
+#
+# Keys:  WASD / arrows  move          F5  save progress
+#        Esc            quit          R   DEBUG: reset the loop now
+#        T              DEBUG: pretend you won a race (+20 s on future loops)
+
+import os
 
 import pygame
 
 import settings
 from machine import Machine, Part
 from player import Player
-from time_loop import TimeLoop
+from progress import Progress
+from time_loop import TimeLoop, format_time
 from town import Town
 
-# The game as a whole is in one of these states. Step 6 will add RACING.
+# The game as a whole is in one of these states. Later steps add RACING.
 PLAYING = "playing"
-WON = "won"
+LEVEL_CLEARED = "level_cleared"
+
+# The save file sits next to this file, wherever you run the game from.
+# __file__ is the path of main.py itself.
+SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), settings.SAVE_FILE)
 
 
 def solid_rects(town, parts):
@@ -61,35 +73,51 @@ def main():
     clock = pygame.time.Clock()
 
     # Fonts: None = Pygame's built-in font; the number is the size.
-    font = pygame.font.Font(None, 24)        # small text (FPS, part counter)
+    font = pygame.font.Font(None, 24)        # small text (FPS, HUD)
     timer_font = pygame.font.Font(None, 56)  # the big countdown
     message_font = pygame.font.Font(None, 40)
     win_font = pygame.font.Font(None, 80)
 
-    # Create the game objects once, before the loop starts.
+    # PERSISTENT state: load the save file if there is one.
+    progress, loaded = Progress.load(SAVE_PATH)
+
+    # LOOP state: everything below is wiped by reset_loop().
     town = Town()
     player = Player(settings.PLAYER_START)
-    time_loop = TimeLoop(settings.LOOP_DURATION)
+    time_loop = TimeLoop(progress.loop_duration)
     parts = [Part(name, position, colour) for name, position, colour in settings.PARTS]
     machine = Machine(settings.MACHINE_RECT, len(parts))
 
     game_state = PLAYING
-    # Seconds left to show the "loop resets" message (0 = hidden).
-    message_time_left = 0
+    level_id = progress.current_level  # the level being played right now
+
+    # A short message in the middle of the screen ("Game saved", ...).
+    message_text = ""
+    message_colour = settings.TEXT
+    message_time_left = 0  # seconds left to show it (0 = hidden)
+
+    def show_message(text, colour=settings.TEXT):
+        nonlocal message_text, message_colour, message_time_left
+        message_text, message_colour = text, colour
+        message_time_left = settings.RESET_MESSAGE_TIME
+
+    if loaded:
+        show_message("Save loaded")
 
     # ---------------- RESETTING THE LOOP ----------------
     # EVERYTHING that belongs to "this loop only" is reset here, in one place.
-    # The timer running out calls it now; death will call it in Step 10.
-    def reset_loop(show_message=True):
-        # 'nonlocal' lets this inner function change the variable defined
-        # in main() above, instead of creating a new local one.
-        nonlocal message_time_left
+    # Note what is NOT here: 'progress'. That is the whole point of Step 5.
+    def reset_loop(announce=True):
         player.reset()  # also drops any carried part
+        # Each new loop lasts as long as Progress says, so race wins
+        # (and the debug key T) make the NEXT loop longer.
+        time_loop.duration = progress.loop_duration
         time_loop.reset()
         machine.reset()
         for part in parts:
             part.reset()
-        message_time_left = settings.RESET_MESSAGE_TIME if show_message else 0
+        if announce:
+            show_message("The loop resets...", settings.TIMER_WARNING)
 
     running = True
 
@@ -115,20 +143,41 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                elif event.key == pygame.K_r and game_state == PLAYING:
+                elif event.key == pygame.K_F5:     # save progress
+                    progress.save(SAVE_PATH)
+                    show_message("Game saved")
+                elif game_state == PLAYING and event.key == pygame.K_r:
                     reset_loop()                   # DEBUG: reset right away
-                elif event.key == pygame.K_RETURN and game_state == WON:
-                    reset_loop(show_message=False)  # play again
+                elif game_state == PLAYING and event.key == pygame.K_t:
+                    # DEBUG: pretend you won a race. Only FUTURE loops get
+                    # longer; the countdown running now doesn't change.
+                    progress.add_loop_time(settings.DEBUG_RACE_BONUS)
+                    show_message(f"+{settings.DEBUG_RACE_BONUS} s on future loops")
+                elif game_state == LEVEL_CLEARED and event.key == pygame.K_RETURN:
+                    # Replay the level just cleared; progress is kept.
+                    reset_loop(announce=False)
                     game_state = PLAYING
+                elif game_state == LEVEL_CLEARED and event.key == pygame.K_n:
+                    # New game: wipe progress (and the save file) completely.
+                    progress.new_game()
+                    progress.save(SAVE_PATH)
+                    level_id = progress.current_level
+                    reset_loop(announce=False)
+                    game_state = PLAYING
+                    show_message("New game")
 
         # 2. UPDATE ---------------------------------------------------
-        # Once you've won, nothing moves and the timer stops.
+        # Once the level is cleared, nothing moves and the timer stops.
         if game_state == PLAYING:
             player.update(dt, solid_rects(town, parts))
             update_parts(player, parts, machine)
 
             if machine.is_complete():
-                game_state = WON
+                # The level's sub-part is built: record it and save at once,
+                # so a cleared level can never be lost.
+                progress.clear_level(level_id)
+                progress.save(SAVE_PATH)
+                game_state = LEVEL_CLEARED
             # Count down; update() returns True on the frame time runs out.
             elif time_loop.update(dt):
                 reset_loop()
@@ -159,7 +208,12 @@ def main():
         timer_text = timer_font.render(time_loop.display_text(), True, timer_colour)
         # get_rect(midtop=...) positions the text by its top-centre point,
         # which makes centring easy.
-        screen.blit(timer_text, timer_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 24)))
+        timer_rect = timer_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 24))
+        screen.blit(timer_text, timer_rect)
+
+        # Under the countdown: how long a full loop lasts (persistent).
+        loop_text = font.render(f"Loop: {format_time(progress.loop_duration)}", True, settings.TEXT)
+        screen.blit(loop_text, loop_text.get_rect(midtop=(timer_rect.centerx, timer_rect.bottom + 2)))
 
         # Part counter and what you're carrying, in the top-right corner.
         top_right = settings.SCREEN_WIDTH - 24
@@ -170,28 +224,32 @@ def main():
             carrying = font.render(f"Carrying: {player.carrying.name}", True, player.carrying.colour)
             screen.blit(carrying, carrying.get_rect(topright=(top_right, 46)))
 
-        # The "loop resets" message, in the middle of the screen.
-        if message_time_left > 0:
-            message = message_font.render("The loop resets...", True, settings.TIMER_WARNING)
-            centre = (settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2 - 60)
-            screen.blit(message, message.get_rect(center=centre))
-
-        # The win screen: darken everything, then show the message on top.
-        if game_state == WON:
+        # The level-cleared screen: darken everything, then show the text.
+        if game_state == LEVEL_CLEARED:
             # SRCALPHA gives the surface see-through pixels; the 4th number
             # in the colour is opacity (0 = invisible, 255 = solid).
             shade = pygame.Surface((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT), pygame.SRCALPHA)
             shade.fill((0, 0, 0, 170))
             screen.blit(shade, (0, 0))
             centre_x, centre_y = settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2
-            title = win_font.render("You escaped!", True, settings.WIN)
-            screen.blit(title, title.get_rect(center=(centre_x, centre_y - 20)))
-            hint = font.render("Enter: play again     Esc: quit", True, settings.TEXT)
-            screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 36)))
+            title = win_font.render(f"{settings.LEVEL_NAMES[level_id]} cleared!", True, settings.WIN)
+            screen.blit(title, title.get_rect(center=(centre_x, centre_y - 30)))
+            saved = font.render("Sub-part built. Progress saved.", True, settings.TEXT)
+            screen.blit(saved, saved.get_rect(center=(centre_x, centre_y + 22)))
+            hint = font.render("Enter: replay level     N: new game     Esc: quit", True, settings.TEXT)
+            screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 50)))
 
-        # Draw the current frames per second in the top-left corner.
+        # The short message, in the middle of the screen (drawn last, on top).
+        if message_time_left > 0:
+            message = message_font.render(message_text, True, message_colour)
+            centre = (settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2 - 100)
+            screen.blit(message, message.get_rect(center=centre))
+
+        # Top-left: frames per second and the current level.
         fps_text = font.render(f"FPS: {clock.get_fps():.0f}", True, settings.TEXT)
         screen.blit(fps_text, (24, 24))
+        level_text = font.render(f"Level: {settings.LEVEL_NAMES[level_id]}", True, settings.TEXT)
+        screen.blit(level_text, (24, 46))
 
         # We drew on a hidden copy of the screen; flip() shows it all at once.
         pygame.display.flip()
