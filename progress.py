@@ -37,9 +37,12 @@ class Progress:
         if level_id not in self.cleared_levels:
             self.cleared_levels.append(level_id)
         # Advance to the next level in the fixed order, if there is one.
-        index = settings.LEVEL_ORDER.index(level_id)
-        if index + 1 < len(settings.LEVEL_ORDER):
-            self.current_level = settings.LEVEL_ORDER[index + 1]
+        # Only when clearing the CURRENT level: replaying an earlier level
+        # must never move you backwards.
+        if level_id == self.current_level:
+            index = settings.LEVEL_ORDER.index(level_id)
+            if index + 1 < len(settings.LEVEL_ORDER):
+                self.current_level = settings.LEVEL_ORDER[index + 1]
 
     # ---------------- Saving and loading ----------------
     # JSON is a plain-text format for numbers, text, lists and dictionaries.

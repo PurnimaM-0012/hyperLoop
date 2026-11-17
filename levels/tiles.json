@@ -1,0 +1,5 @@
+{
+  "_help": "One entry per map symbol. solid = blocks movement. colour = [red, green, blue], used when there is no image. image = optional 32x32 PNG inside the assets folder, e.g. \"tiles/wall.png\". S, M and the digits are reserved for the start, the machine and parts; they stand on a '.' floor tile.",
+  "#": {"name": "wall", "solid": true, "colour": [88, 82, 76]},
+  ".": {"name": "floor", "solid": false, "colour": [34, 31, 28]}
+}
