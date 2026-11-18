@@ -20,8 +20,8 @@ TITLE = "Time Loop"
 # --- Map ---
 TILE_SIZE = 32    # each map character is a 32 x 32 pixel square
 HUD_HEIGHT = 64   # the bar at the top for the timer and text; the map starts below it
-MAP_COLUMNS = SCREEN_WIDTH // TILE_SIZE                  # 30
-MAP_ROWS = (SCREEN_HEIGHT - HUD_HEIGHT) // TILE_SIZE     # 18
+# Maps can be any size: the camera scrolls around maps bigger than the window.
+# A map exactly 30 x 18 tiles fills the window below the HUD with no scrolling.
 
 # --- Game loop ---
 FPS = 60  # how many times per second the loop runs
@@ -34,7 +34,8 @@ PLAYER_SPEED = 200   # pixels per second
 # --- Progress (what survives a loop reset) ---
 START_LOOP_DURATION = 80  # seconds in the first loop (1 min 20 s, from the design doc)
 START_BAG_CAPACITY = 1    # bag slots at the start (used from Step 8)
-LEVEL_ORDER = ["prison"]  # fixed level order = file names in levels/ (prison -> prison.json)
+# Fixed level order = file names in levels/ (prison -> levels/prison.json).
+LEVEL_ORDER = ["prison", "research_facility"]
 DEBUG_RACE_BONUS = 20     # seconds the debug key T adds ("pretend I won a race")
 
 # --- Time loop ---
@@ -55,4 +56,5 @@ PLAYER = (214, 120, 52)     # rusty orange, easy to spot
 TIMER_WARNING = (225, 60, 50)  # red for the last seconds of a loop
 MACHINE = (160, 150, 135)      # outline of the machine
 EMPTY_SLOT = (55, 50, 46)      # a machine slot with no part in it
-WIN = (120, 210, 110)          # green "cleared" text
+WIN = (120, 210, 110)          # green "cleared" text and built sub-parts
+PORTAL_GLOW = (190, 140, 255)  # the pulsing ring around a portal

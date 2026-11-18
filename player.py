@@ -22,6 +22,11 @@ class Player:
         self.rect.topleft = (round(self.pos.x), round(self.pos.y))
         self.carrying = None  # the Part being carried, or None (one at a time)
 
+    def teleport(self, position):
+        """Jump to a new position (portals). Keeps whatever you're carrying."""
+        self.pos = pygame.Vector2(position)
+        self.rect.topleft = (round(self.pos.x), round(self.pos.y))
+
     def read_input(self):
         """Turn the keys being held down into a direction, like (1, 0) for right."""
         keys = pygame.key.get_pressed()
@@ -75,5 +80,5 @@ class Player:
                     self.rect.top = wall.bottom
                 self.pos.y = self.rect.y
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, settings.PLAYER, self.rect)
+    def draw(self, screen, camera):
+        pygame.draw.rect(screen, settings.PLAYER, camera.to_screen(self.rect))

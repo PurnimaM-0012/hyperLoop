@@ -14,10 +14,11 @@ class Part:
     CARRIED = "carried"
     INSTALLED = "installed"
 
-    def __init__(self, name, position, colour):
+    def __init__(self, name, position, colour, area="main"):
         self.name = name
-        self.home = position  # where it lies at the start of every loop
+        self.home = position  # where it lies at the start of every loop (world coordinates)
         self.colour = colour
+        self.area = area      # which area (map) of the level it lies in
         self.rect = pygame.Rect(0, 0, settings.PART_SIZE, settings.PART_SIZE)
         self.reset()
 
@@ -26,11 +27,11 @@ class Part:
         self.state = Part.ON_GROUND
         self.rect.topleft = self.home
 
-    def draw(self, screen):
+    def draw(self, screen, camera):
         # Only parts on the ground are drawn here. Carried parts are drawn
         # above the player, and installed parts inside the machine.
         if self.state == Part.ON_GROUND:
-            pygame.draw.rect(screen, self.colour, self.rect)
+            pygame.draw.rect(screen, self.colour, camera.to_screen(self.rect))
 
     def draw_at(self, screen, center):
         """Draw the part centred on a point (used above the player's head)."""
@@ -56,18 +57,27 @@ class Machine:
     def is_complete(self):
         return len(self.installed) == self.total_parts
 
-    def draw(self, screen):
-        # The machine's outline (width=2 draws just the border, not filled).
-        pygame.draw.rect(screen, settings.MACHINE, self.rect, width=2)
+    def draw(self, screen, camera, built_subparts=0):
+        """Draw the machine. built_subparts = sub-parts from cleared levels."""
+        rect = camera.to_screen(self.rect)  # where the machine is in the window
 
-        # One slot per part, spread evenly across the machine. A slot is
-        # filled with the colour of the part installed in it, or left dark.
+        # The machine's outline (width=2 draws just the border, not filled).
+        pygame.draw.rect(screen, settings.MACHINE, rect, width=2)
+
+        # Sub-parts built in earlier levels: small green blocks along the top
+        # edge. They are PERSISTENT, so the loop reset never removes them.
+        for i in range(built_subparts):
+            block = pygame.Rect(rect.left + 4 + i * 14, rect.top - 12, 10, 8)
+            pygame.draw.rect(screen, settings.WIN, block)
+
+        # One slot per part of THIS level, spread evenly across the machine.
+        # A slot is filled with the colour of the part installed in it.
         slot_size = settings.PART_SIZE
-        gap = (self.rect.width - self.total_parts * slot_size) // (self.total_parts + 1)
+        gap = (rect.width - self.total_parts * slot_size) // (self.total_parts + 1)
         for i in range(self.total_parts):
             slot = pygame.Rect(0, 0, slot_size, slot_size)
-            slot.left = self.rect.left + gap + i * (slot_size + gap)
-            slot.centery = self.rect.centery
+            slot.left = rect.left + gap + i * (slot_size + gap)
+            slot.centery = rect.centery
             if i < len(self.installed):
                 pygame.draw.rect(screen, self.installed[i].colour, slot)
             else:

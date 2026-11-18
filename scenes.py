@@ -6,9 +6,12 @@
 # main.py just runs whichever scene is current. To change screens, a scene
 # sets game.scene to a new scene. Later steps add a RaceScene the same way.
 
+import math
+
 import pygame
 
 import settings
+from camera import Camera
 from level import Level, read_level_name
 from machine import Part
 from player import Player
@@ -137,18 +140,23 @@ class MenuScene:
 #  PLAYING A LEVEL
 # =====================================================================
 
-def solid_rects(level):
-    """Everything the player can't walk through this frame.
+def solid_rects(level, area_name):
+    """Everything the player can't walk through in this area right now.
 
     Parts lying on the ground are solid, just like walls. Once picked up or
     installed they are no longer on the ground, so they stop blocking.
     """
-    return level.walls + [part.rect for part in level.parts if part.state == Part.ON_GROUND]
+    area = level.areas[area_name]
+    ground_parts = [part.rect for part in level.parts
+                    if part.area == area_name and part.state == Part.ON_GROUND]
+    return area.walls + ground_parts
 
 
 def update_parts(player, parts, machine):
     """Pick up a part you're touching, install it on reaching the machine.
 
+    'parts' are the parts in the player's current area, and 'machine' is
+    None when the machine is in a different area.
     Parts on the ground are solid, so the player stops exactly at their edge
     and never overlaps them. To detect "touching", we check a copy of the
     player's box grown by 2 pixels on every side (inflate(4, 4)).
@@ -162,7 +170,7 @@ def update_parts(player, parts, machine):
                 part.state = Part.CARRIED
                 player.carrying = part
                 break  # only one part at a time
-    elif player.rect.colliderect(machine.rect):
+    elif machine is not None and player.rect.colliderect(machine.rect):
         # Carrying a part and touching the machine: install it.
         machine.install(player.carrying)
         player.carrying = None
@@ -180,13 +188,26 @@ class LevelScene:
         self.level = Level(level_id)
         self.player = Player(self.level.start)
         self.time_loop = TimeLoop(self.progress.loop_duration)
+        self.area_name = self.level.start_area  # the area (map) the player is in
+        # A portal only works once you've stepped OFF a portal. Without this,
+        # you'd arrive standing on the other portal and bounce straight back.
+        self.portal_ready = True
 
+        self.camera = Camera()
         self.state = LevelScene.PLAYING
+        self.next_level = None  # set when a level is cleared and another follows
+        self.elapsed = 0        # seconds since the scene began (for the portal glow)
         self.message_text = ""
         self.message_colour = settings.TEXT
         self.message_time_left = 0
 
     # ---------------- helpers ----------------
+
+    @property
+    def area(self):
+        """The Area object the player is in. A @property is read like a
+        variable (self.area) but works it out each time it's used."""
+        return self.level.areas[self.area_name]
 
     def show_message(self, text, colour=settings.TEXT):
         self.message_text, self.message_colour = text, colour
@@ -194,7 +215,9 @@ class LevelScene:
 
     def reset_loop(self, announce=True):
         """Reset EVERYTHING that belongs to this loop only. Never 'progress'."""
-        self.player.reset()  # also drops any carried part
+        self.area_name = self.level.start_area  # every loop starts at the machine
+        self.player.reset()  # back to S; also drops any carried part
+        self.portal_ready = True
         # Each new loop lasts as long as Progress says, so race wins
         # (and the debug key T) make the NEXT loop longer.
         self.time_loop.duration = self.progress.loop_duration
@@ -205,13 +228,40 @@ class LevelScene:
         if announce:
             self.show_message("The loop resets...", settings.TIMER_WARNING)
 
+    def use_portal(self):
+        """Travel to the other area when the player stands on a portal."""
+        portal = self.area.portal
+        if portal is None or not self.level.portal_links:
+            return
+        standing_on_it = portal.collidepoint(self.player.rect.center)
+        if not standing_on_it:
+            self.portal_ready = True  # stepped off: portals work again
+        elif self.portal_ready:
+            destination = self.level.portal_links[self.area_name]
+            self.area_name = destination
+            # Arrive on the destination's portal, still carrying any part.
+            self.player.teleport(self.level.portal_arrival(destination))
+            self.portal_ready = False  # must step off before it works again
+
+    def clear_level(self):
+        """The level's sub-part is built: record it, save, and find what's next."""
+        was_current = (self.level.id == self.progress.current_level)
+        self.progress.clear_level(self.level.id)
+        # Save at once, so a cleared level can never be lost.
+        self.progress.save(settings.SAVE_PATH)
+        # Clearing your current level unlocks the next one. A replay of an
+        # earlier level doesn't, so it just goes back to the menu.
+        if was_current and self.progress.current_level != self.level.id:
+            self.next_level = self.progress.current_level
+        self.state = LevelScene.CLEARED
+
     # ---------------- the three scene methods ----------------
 
     def handle_event(self, event):
         if event.type != pygame.KEYDOWN:
             return
         if event.key == pygame.K_ESCAPE:
-            from_level_to_menu(self.game)
+            self.game.scene = MenuScene(self.game)
         elif event.key == pygame.K_F5:             # save progress
             self.progress.save(settings.SAVE_PATH)
             self.show_message("Game saved")
@@ -222,19 +272,28 @@ class LevelScene:
             self.progress.add_loop_time(settings.DEBUG_RACE_BONUS)
             self.show_message(f"+{settings.DEBUG_RACE_BONUS} s on future loops")
         elif self.state == LevelScene.CLEARED and event.key == pygame.K_RETURN:
-            from_level_to_menu(self.game)
+            if self.next_level is not None:
+                self.game.scene = LevelScene(self.game, self.next_level)
+            else:
+                self.game.scene = MenuScene(self.game)
+        elif self.state == LevelScene.CLEARED and event.key == pygame.K_m:
+            self.game.scene = MenuScene(self.game)
 
     def update(self, dt):
+        self.elapsed += dt
         if self.state == LevelScene.PLAYING:
-            self.player.update(dt, solid_rects(self.level))
-            update_parts(self.player, self.level.parts, self.level.machine)
+            level = self.level
+            self.player.update(dt, solid_rects(level, self.area_name))
+            self.use_portal()
 
-            if self.level.machine.is_complete():
-                # The level's sub-part is built: record it and save at once,
-                # so a cleared level can never be lost.
-                self.progress.clear_level(self.level.id)
-                self.progress.save(settings.SAVE_PATH)
-                self.state = LevelScene.CLEARED
+            # Only the parts in this area can be picked up, and the machine
+            # only works if it's in this area too.
+            parts_here = [part for part in level.parts if part.area == self.area_name]
+            machine_here = level.machine if self.area_name == level.machine_area else None
+            update_parts(self.player, parts_here, machine_here)
+
+            if level.machine.is_complete():
+                self.clear_level()
             # Count down; update() returns True on the frame time runs out.
             elif self.time_loop.update(dt):
                 self.reset_loop()
@@ -242,30 +301,43 @@ class LevelScene:
         self.message_time_left = max(0, self.message_time_left - dt)
 
     def draw(self, screen):
-        fonts = self.game.fonts
-        level, player = self.level, self.player
+        level, player, camera, area = self.level, self.player, self.camera, self.area
 
-        # The map (pre-drawn once), then machine, parts and player on top.
-        level.draw(screen)
-        level.machine.draw(screen)
+        # Point the camera at the player, then draw the WORLD through it.
+        camera.follow(player.rect, area.width, area.height)
+        screen.fill(settings.BACKGROUND)  # shows around maps smaller than the window
+        screen.blit(area.background, camera.to_screen(area.background.get_rect()))
+
+        if area.portal is not None and level.portal_links:
+            self.draw_portal_glow(screen, camera.to_screen(area.portal))
+        if self.area_name == level.machine_area:
+            # Sub-parts from OTHER cleared levels (persistent) sit on the machine.
+            built = len([lid for lid in self.progress.cleared_levels if lid != level.id])
+            level.machine.draw(screen, camera, built)
         for part in level.parts:
-            part.draw(screen)
-        player.draw(screen)
+            if part.area == self.area_name:
+                part.draw(screen, camera)
+        player.draw(screen, camera)
         if player.carrying is not None:
             # Show the carried part just above the player's head.
-            above_head = (player.rect.centerx, player.rect.top - 12)
-            player.carrying.draw_at(screen, above_head)
+            on_screen = camera.to_screen(player.rect)
+            player.carrying.draw_at(screen, (on_screen.centerx, on_screen.top - 12))
 
+        # SCREEN things (they don't scroll): the HUD and the overlays.
         self.draw_hud(screen)
-
         if self.state == LevelScene.CLEARED:
             self.draw_cleared(screen)
-
-        # The short message, in the middle of the screen (drawn last, on top).
         if self.message_time_left > 0:
-            message = fonts["medium"].render(self.message_text, True, self.message_colour)
+            message = self.game.fonts["medium"].render(self.message_text, True, self.message_colour)
             centre = (settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2 - 100)
             screen.blit(message, message.get_rect(center=centre))
+
+    def draw_portal_glow(self, screen, portal_rect):
+        # math.sin swings smoothly between -1 and 1; turn that into 0..1
+        # so the ring grows and shrinks about once a second.
+        pulse = (math.sin(self.elapsed * 6) + 1) / 2
+        ring = portal_rect.inflate(4 + pulse * 8, 4 + pulse * 8)
+        pygame.draw.rect(screen, settings.PORTAL_GLOW, ring, width=2, border_radius=6)
 
     def draw_hud(self, screen):
         """The bar at the top: level, timer, loop length, parts."""
@@ -286,8 +358,11 @@ class LevelScene:
                                           True, settings.DIM_TEXT)
         screen.blit(loop_text, loop_text.get_rect(midtop=(timer_rect.centerx, timer_rect.bottom)))
 
-        # Left: the level name.
-        level_text = fonts["small"].render(f"Level: {self.level.name}", True, settings.TEXT)
+        # Left: the level name, plus the area when the level has several.
+        name = self.level.name
+        if len(self.level.areas) > 1:
+            name += " - " + self.area_name.replace("_", " ").capitalize()
+        level_text = fonts["small"].render(name, True, settings.TEXT)
         screen.blit(level_text, (16, 36))
 
         # Right: parts installed and what you're carrying.
@@ -313,9 +388,9 @@ class LevelScene:
         screen.blit(title, title.get_rect(center=(centre_x, centre_y - 30)))
         saved = fonts["small"].render("Sub-part built. Progress saved.", True, settings.TEXT)
         screen.blit(saved, saved.get_rect(center=(centre_x, centre_y + 22)))
-        hint = fonts["small"].render("Enter: back to the menu", True, settings.TEXT)
+        if self.next_level is not None:
+            hint_text = f"Enter: continue to the {read_level_name(self.next_level)}     M: menu"
+        else:
+            hint_text = "Enter: back to the menu"
+        hint = fonts["small"].render(hint_text, True, settings.TEXT)
         screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 50)))
-
-
-def from_level_to_menu(game):
-    game.scene = MenuScene(game)
