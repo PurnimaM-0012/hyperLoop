@@ -6,7 +6,9 @@
 # Run it with:  python main.py
 #
 # Keys in a level:  WASD / arrows  move          F5   save progress
+#                   Q              drop the last item picked up
 #                   Esc            menu          R    DEBUG: reset the loop now
+#                   B              DEBUG: one more bag slot
 #                   T              DEBUG: pretend you won a race (+20 s now and on future loops)
 
 import os

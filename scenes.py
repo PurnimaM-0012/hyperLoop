@@ -11,6 +11,7 @@ import math
 import pygame
 
 import settings
+from bag import Bag
 from camera import Camera
 from level import Level, read_level_name
 from machine import Part
@@ -145,15 +146,18 @@ def solid_rects(level, area_name):
 
     Parts lying on the ground are solid, just like walls. Once picked up or
     installed they are no longer on the ground, so they stop blocking.
+    A part you've just dropped doesn't block you until you step away from it
+    (otherwise it would appear inside you and you'd be stuck).
     """
     area = level.areas[area_name]
     ground_parts = [part.rect for part in level.parts
-                    if part.area == area_name and part.state == Part.ON_GROUND]
+                    if part.area == area_name and part.state == Part.ON_GROUND
+                    and not part.just_dropped]
     return area.walls + ground_parts
 
 
 def update_parts(player, parts, machine):
-    """Pick up a part you're touching, install it on reaching the machine.
+    """Pick up parts you're touching, install them on reaching the machine.
 
     'parts' are the parts in the player's current area, and 'machine' is
     None when the machine is in a different area.
@@ -162,18 +166,26 @@ def update_parts(player, parts, machine):
     player's box grown by 2 pixels on every side (inflate(4, 4)).
     The machine is still a TRIGGER: you walk into it, it doesn't block you.
     """
-    if player.carrying is None:
-        # Hands free: pick up the first part on the ground we're touching.
-        reach = player.rect.inflate(4, 4)
-        for part in parts:
-            if part.state == Part.ON_GROUND and reach.colliderect(part.rect):
-                part.state = Part.CARRIED
-                player.carrying = part
-                break  # only one part at a time
-    elif machine is not None and player.rect.colliderect(machine.rect):
-        # Carrying a part and touching the machine: install it.
-        machine.install(player.carrying)
-        player.carrying = None
+    reach = player.rect.inflate(4, 4)
+    bag = player.bag
+
+    for part in parts:
+        if part.state != Part.ON_GROUND:
+            continue
+        if part.just_dropped:
+            # Stepped away from a part you dropped: it's a normal part again.
+            if not reach.colliderect(part.rect):
+                part.just_dropped = False
+        elif bag.has_room() and reach.colliderect(part.rect):
+            # Touching a part and the bag has a free slot: pick it up.
+            part.state = Part.CARRIED
+            bag.add(part)
+
+    if machine is not None and player.rect.colliderect(machine.rect):
+        # Touching the machine: install EVERY part in the bag.
+        for part in bag.parts():
+            bag.remove(part)
+            machine.install(part)
 
 
 class LevelScene:
@@ -186,7 +198,9 @@ class LevelScene:
 
         # LOOP state: everything reset_loop() puts back.
         self.level = Level(level_id)
-        self.player = Player(self.level.start)
+        # The bag's SIZE is persistent (it grows as you clear levels); its
+        # loop items (parts) are emptied by every loop reset.
+        self.player = Player(self.level.start, Bag(self.progress.bag_capacity))
         self.time_loop = TimeLoop(self.progress.loop_duration)
         self.area_name = self.level.start_area  # the area (map) the player is in
         # A portal only works once you've stepped OFF a portal. Without this,
@@ -220,7 +234,7 @@ class LevelScene:
     def reset_loop(self, announce=True):
         """Reset EVERYTHING that belongs to this loop only. Never 'progress'."""
         self.area_name = self.level.start_area  # every loop starts at the machine
-        self.player.reset()  # back to S; also drops any carried part
+        self.player.reset()  # back to S; parts leave the bag (they go home below)
         self.portal_ready = True
         # Each new loop lasts as long as Progress says, so race wins
         # (and the debug key T) make the NEXT loop longer.
@@ -243,9 +257,19 @@ class LevelScene:
         elif self.portal_ready:
             destination = self.level.portal_links[self.area_name]
             self.area_name = destination
-            # Arrive on the destination's portal, still carrying any part.
+            # Arrive on the destination's portal, with everything in the bag.
             self.player.teleport(self.level.portal_arrival(destination))
             self.portal_ready = False  # must step off before it works again
+
+    def drop_item(self):
+        """Q: put the most recently picked-up item on the ground where you stand."""
+        bag = self.player.bag
+        if not bag.items:
+            self.show_message("The bag is empty")
+            return
+        item = bag.take_last()
+        item.drop_at(self.player.rect.center, self.area_name)
+        self.show_message(f"Dropped {item.name}")
 
     def clear_level(self):
         """The level's sub-part is built: record it, save, and find what's next."""
@@ -269,8 +293,15 @@ class LevelScene:
         elif event.key == pygame.K_F5:             # save progress
             self.progress.save(settings.SAVE_PATH)
             self.show_message("Game saved")
+        elif self.state == LevelScene.PLAYING and event.key == pygame.K_q:
+            self.drop_item()
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_r:
             self.reset_loop()                      # DEBUG: reset right away
+        elif self.state == LevelScene.PLAYING and event.key == pygame.K_b:
+            # DEBUG: one more bag slot, saved like real progress.
+            self.progress.bag_capacity += 1
+            self.player.bag.capacity = self.progress.bag_capacity
+            self.show_message(f"Bag: {self.player.bag.capacity} slots")
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_t:
             # DEBUG: pretend you won a race. Like a real race win, it adds
             # time to the loop running NOW and makes every FUTURE loop longer.
@@ -329,10 +360,14 @@ class LevelScene:
             if part.area == self.area_name:
                 part.draw(screen, camera)
         player.draw(screen, camera)
-        if player.carrying is not None:
-            # Show the carried part just above the player's head.
+        # Show what's in the bag as a row of small squares above the player.
+        items = player.bag.items
+        if items:
             on_screen = camera.to_screen(player.rect)
-            player.carrying.draw_at(screen, (on_screen.centerx, on_screen.top - 12))
+            spacing = settings.PART_SIZE + 2
+            first_x = on_screen.centerx - (len(items) - 1) * spacing / 2
+            for i, item in enumerate(items):
+                item.draw_at(screen, (first_x + i * spacing, on_screen.top - 12))
 
         # SCREEN things (they don't scroll): the HUD and the overlays.
         self.draw_hud(screen)
@@ -376,16 +411,21 @@ class LevelScene:
         level_text = fonts["small"].render(name, True, settings.TEXT)
         screen.blit(level_text, (16, 36))
 
-        # Right: parts installed and what you're carrying.
+        # Right: the bag's slots, the parts counter beside them, and below,
+        # the names of what's in the bag.
         right = settings.SCREEN_WIDTH - 16
+        bag = self.player.bag
+        slots_left = bag.draw_slots(screen, (right, 8))
         machine = self.level.machine
         counter = fonts["small"].render(f"Parts installed: {len(machine.installed)}/{machine.total_parts}",
                                         True, settings.TEXT)
-        screen.blit(counter, counter.get_rect(topright=(right, 12)))
-        if self.player.carrying is not None:
-            part = self.player.carrying
-            carrying = fonts["small"].render(f"Carrying: {part.name}", True, part.colour)
-            screen.blit(carrying, carrying.get_rect(topright=(right, 36)))
+        screen.blit(counter, counter.get_rect(topright=(slots_left - 16, 12)))
+        if bag.items:
+            names = ", ".join(item.name for item in bag.items)
+        else:
+            names = f"Bag: empty ({bag.capacity} slot{'s' if bag.capacity != 1 else ''})"
+        bag_text = fonts["small"].render(names, True, settings.DIM_TEXT)
+        screen.blit(bag_text, bag_text.get_rect(topright=(right, 36)))
 
     def draw_cleared(self, screen):
         fonts = self.game.fonts

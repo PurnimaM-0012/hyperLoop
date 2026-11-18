@@ -36,6 +36,9 @@ class Progress:
         """Record that a level's sub-part is built, and move to the next level."""
         if level_id not in self.cleared_levels:
             self.cleared_levels.append(level_id)
+            # Each level cleared for the FIRST time adds a bag slot.
+            # (Rule from the design doc; subject to change.)
+            self.bag_capacity += settings.BAG_SLOTS_PER_LEVEL
         # Advance to the next level in the fixed order, if there is one.
         # Only when clearing the CURRENT level: replaying an earlier level
         # must never move you backwards.
@@ -84,6 +87,11 @@ class Progress:
             progress.bag_capacity = data.get("bag_capacity", progress.bag_capacity)
             progress.utilities = data.get("utilities", [])
             progress.races_won = data.get("races_won", [])
+            # Saves made before Step 8 cleared levels without growing the
+            # bag. Make sure the bag is at least as big as the rule says.
+            # (Fixing up old saves like this is called a "migration".)
+            earned = settings.START_BAG_CAPACITY + settings.BAG_SLOTS_PER_LEVEL * len(progress.cleared_levels)
+            progress.bag_capacity = max(progress.bag_capacity, earned)
         except (OSError, ValueError):
             # The file couldn't be read or isn't valid JSON: start fresh
             # rather than crash. (ValueError covers broken JSON.)

@@ -7,8 +7,9 @@ import settings
 
 
 class Player:
-    def __init__(self, start):
+    def __init__(self, start, bag):
         self.start = start  # remembered so every new loop begins here
+        self.bag = bag      # what the player carries (see bag.py)
         # 'pos' stores the exact position as decimals (e.g. 480.37).
         # 'rect' is the whole-pixel box used for drawing and collisions.
         # We need both: at 200 px/s one frame moves about 3.3 px, and a Rect
@@ -20,10 +21,10 @@ class Player:
         """Put the player back at the start point (used when a loop resets)."""
         self.pos = pygame.Vector2(self.start)
         self.rect.topleft = (round(self.pos.x), round(self.pos.y))
-        self.carrying = None  # the Part being carried, or None (one at a time)
+        self.bag.empty_for_new_loop()  # parts go home; persistent items stay
 
     def teleport(self, position):
-        """Jump to a new position (portals). Keeps whatever you're carrying."""
+        """Jump to a new position (portals). Keeps everything in the bag."""
         self.pos = pygame.Vector2(position)
         self.rect.topleft = (round(self.pos.x), round(self.pos.y))
 

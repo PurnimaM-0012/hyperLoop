@@ -33,7 +33,8 @@ PLAYER_SPEED = 200   # pixels per second
 
 # --- Progress (what survives a loop reset) ---
 START_LOOP_DURATION = 80  # seconds in the first loop (1 min 20 s, from the design doc)
-START_BAG_CAPACITY = 1    # bag slots at the start (used from Step 8)
+START_BAG_CAPACITY = 1    # bag slots at the start of a new game
+BAG_SLOTS_PER_LEVEL = 1   # extra slots for each level cleared (subject to change)
 # Fixed level order = file names in levels/ (prison -> levels/prison.json).
 LEVEL_ORDER = ["prison", "research_facility"]
 DEBUG_RACE_BONUS = 20     # seconds the debug key T adds now and to future loops ("pretend I won a race")
@@ -42,8 +43,9 @@ DEBUG_RACE_BONUS = 20     # seconds the debug key T adds now and to future loops
 WARNING_TIME = 10         # the timer turns red at or below this many seconds
 MESSAGE_TIME = 1.5        # how long a short message stays on screen
 
-# --- Machine and parts ---
+# --- Machine, parts and the bag ---
 PART_SIZE = 16
+BAG_SLOT_SIZE = 22   # the slot boxes in the HUD, in pixels
 
 # --- Colours (red, green, blue), each from 0 to 255 ---
 # Tile colours (walls, floor...) are in levels/tiles.json instead.

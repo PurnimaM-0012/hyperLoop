@@ -14,18 +14,34 @@ class Part:
     CARRIED = "carried"
     INSTALLED = "installed"
 
+    # Bag item details (see bag.py): parts are loop items, so a loop reset
+    # takes them out of the bag and sends them home.
+    kind = "part"
+    persistent = False
+
     def __init__(self, name, position, colour, area="main"):
         self.name = name
-        self.home = position  # where it lies at the start of every loop (world coordinates)
+        self.home = position      # where it lies at the start of every loop (world coordinates)
+        self.home_area = area     # ...and in which area (map) of the level
         self.colour = colour
-        self.area = area      # which area (map) of the level it lies in
         self.rect = pygame.Rect(0, 0, settings.PART_SIZE, settings.PART_SIZE)
         self.reset()
 
     def reset(self):
         """Put the part back on the ground at its starting position."""
         self.state = Part.ON_GROUND
+        self.area = self.home_area
         self.rect.topleft = self.home
+        # True right after the player drops it: until they step away it
+        # neither blocks them nor gets picked straight back up.
+        self.just_dropped = False
+
+    def drop_at(self, centre, area):
+        """Put the part on the ground, centred on a point, in an area."""
+        self.state = Part.ON_GROUND
+        self.area = area
+        self.rect.center = centre
+        self.just_dropped = True
 
     def draw(self, screen, camera):
         # Only parts on the ground are drawn here. Carried parts are drawn
