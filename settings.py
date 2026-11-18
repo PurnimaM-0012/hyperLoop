@@ -36,7 +36,7 @@ START_LOOP_DURATION = 80  # seconds in the first loop (1 min 20 s, from the desi
 START_BAG_CAPACITY = 1    # bag slots at the start (used from Step 8)
 # Fixed level order = file names in levels/ (prison -> levels/prison.json).
 LEVEL_ORDER = ["prison", "research_facility"]
-DEBUG_RACE_BONUS = 20     # seconds the debug key T adds ("pretend I won a race")
+DEBUG_RACE_BONUS = 20     # seconds the debug key T adds now and to future loops ("pretend I won a race")
 
 # --- Time loop ---
 WARNING_TIME = 10         # the timer turns red at or below this many seconds

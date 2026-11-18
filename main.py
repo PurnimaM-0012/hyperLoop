@@ -7,7 +7,7 @@
 #
 # Keys in a level:  WASD / arrows  move          F5   save progress
 #                   Esc            menu          R    DEBUG: reset the loop now
-#                   T              DEBUG: pretend you won a race (+20 s on future loops)
+#                   T              DEBUG: pretend you won a race (+20 s now and on future loops)
 
 import os
 

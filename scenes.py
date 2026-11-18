@@ -193,6 +193,10 @@ class LevelScene:
         # you'd arrive standing on the other portal and bounce straight back.
         self.portal_ready = True
 
+        # A replay is playing any level other than the one you're up to.
+        # Replays don't show sub-parts built in other levels on the machine.
+        self.is_replay = (level_id != self.progress.current_level)
+
         self.camera = Camera()
         self.state = LevelScene.PLAYING
         self.next_level = None  # set when a level is cleared and another follows
@@ -268,9 +272,12 @@ class LevelScene:
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_r:
             self.reset_loop()                      # DEBUG: reset right away
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_t:
-            # DEBUG: pretend you won a race. Only FUTURE loops get longer.
+            # DEBUG: pretend you won a race. Like a real race win, it adds
+            # time to the loop running NOW and makes every FUTURE loop longer.
             self.progress.add_loop_time(settings.DEBUG_RACE_BONUS)
-            self.show_message(f"+{settings.DEBUG_RACE_BONUS} s on future loops")
+            self.time_loop.time_left += settings.DEBUG_RACE_BONUS
+            self.time_loop.duration = self.progress.loop_duration
+            self.show_message(f"+{settings.DEBUG_RACE_BONUS} s now and on future loops")
         elif self.state == LevelScene.CLEARED and event.key == pygame.K_RETURN:
             if self.next_level is not None:
                 self.game.scene = LevelScene(self.game, self.next_level)
@@ -311,8 +318,12 @@ class LevelScene:
         if area.portal is not None and level.portal_links:
             self.draw_portal_glow(screen, camera.to_screen(area.portal))
         if self.area_name == level.machine_area:
-            # Sub-parts from OTHER cleared levels (persistent) sit on the machine.
-            built = len([lid for lid in self.progress.cleared_levels if lid != level.id])
+            # Sub-parts from OTHER cleared levels (persistent) sit on the
+            # machine, but only when playing your current level, not a replay.
+            if self.is_replay:
+                built = 0
+            else:
+                built = len([lid for lid in self.progress.cleared_levels if lid != level.id])
             level.machine.draw(screen, camera, built)
         for part in level.parts:
             if part.area == self.area_name:
