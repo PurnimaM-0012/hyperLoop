@@ -41,7 +41,10 @@ Debug keys: R reset loop, T +20 s (now and future loops), B +1 bag slot.
 | `player.py` | Movement with `dt`, axis-by-axis wall collision, `teleport()` |
 | `bag.py` | Limited-slot inventory; items have `kind` and `persistent` |
 | `machine.py` | `Part` (states ON_GROUND / CARRIED / INSTALLED, dropping) and `Machine` |
-| `camera.py` | World -> screen coordinates, follows the player, clamps at map edges |
+| `camera.py` | World -> screen coordinates, follows the player, clamps at map edges; smooth follow and screen shake for racing |
+| `car.py` | Arcade car: angle + velocity, eased steering, grip/handbrake drift, grass slowdown, barrier bounce |
+| `tuning.py` | Live tuning panel on the track (Tab); F6 writes `tuning.txt` |
+| `levels/tracks/` | Race tracks as text maps (`=` start line, `>` `v` `<` `^` arrows, `,` grass) |
 | `time_loop.py` | The countdown and `format_time()` |
 | `progress.py` | Persistent state (never touched by `reset_loop()`), saved to `save.json` |
 | `settings.py` | Every tunable number and colour |
@@ -50,9 +53,9 @@ Key rule: **loop state** is reset by `reset_loop()`; **persistent state** lives 
 
 ## Status
 
-Steps 1-8 done (loop, movement, timer, parts, progress/saving, levels/menu, research
-facility + portals + camera, bag). Next: Step 9 (car driving: acceleration,
-steering by angle, drift friction, barriers, RaceScene).
+Steps 1-9 done (loop, movement, timer, parts, progress/saving, levels/menu, research
+facility + portals + camera, bag, arcade car on a vertical test track with live
+tuning; debug key C opens it from a level). Next: Step 10 (race rules).
 Later: repairs/fuel/salvage, race rules, rival AI, weapons, utilities. See the design doc.
 
 ## Conventions
