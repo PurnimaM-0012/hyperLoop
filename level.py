@@ -57,8 +57,26 @@ def load_tile_types():
             "solid": info.get("solid", False),
             "colour": tuple(info["colour"]),
             "image": image,
+            "speed": info.get("speed", 1.0),  # 1 = normal; grass is slower
         }
     return tile_types
+
+
+def load_track(track_id):
+    """Load a race track from levels/tracks/<track_id>.json.
+
+    A track is just a text map, built with the same Area class as level maps,
+    so it uses the same tile legend. 'S' marks where the car starts, and
+    "start_angle" says which way it faces (0 = right, 90 = down).
+    Returns (name, area, start_angle).
+    """
+    file_name = os.path.join("tracks", track_id + ".json")
+    with open(os.path.join(settings.LEVELS_DIR, file_name)) as file:
+        data = json.load(file)
+    area = Area(track_id, data["map"], load_tile_types(), file_name)
+    if area.start_tile is None:
+        raise ValueError(f"{file_name}: the track needs an S (car start)")
+    return data["name"], area, data.get("start_angle", 0)
 
 
 class Area:
@@ -78,12 +96,16 @@ class Area:
         self.start_tile = None   # the S tile, if this area has it
         self.machine_tiles = []  # the M tiles, if this area has the machine
         self.part_tiles = []     # (symbol, tile rect) for each part digit
+        # The "speed" of every tile, row by row, so cars can ask how fast
+        # they're allowed to go where they are (grass is slower than road).
+        self.speed_grid = []
 
         # The map never changes while playing, so we draw it ONCE onto this
         # surface and just copy that picture every frame.
         self.background = pygame.Surface((self.width, self.height))
 
         for row, line in enumerate(rows):
+            self.speed_grid.append([])
             for column, symbol in enumerate(line):
                 tile_rect = pygame.Rect(column * size, row * size, size, size)
                 where = f"{source}, map row {row + 1}, column {column + 1}"
@@ -115,6 +137,15 @@ class Area:
                     pygame.draw.rect(self.background, tile["colour"], tile_rect)
                 if tile["solid"]:
                     self.walls.append(tile_rect)
+                self.speed_grid[row].append(tile["speed"])
+
+    def speed_at(self, point):
+        """The speed multiplier of the tile under a world point (1 = normal)."""
+        column = int(point[0] // settings.TILE_SIZE)
+        row = int(point[1] // settings.TILE_SIZE)
+        if 0 <= row < len(self.speed_grid) and 0 <= column < len(self.speed_grid[0]):
+            return self.speed_grid[row][column]
+        return 1.0
 
 
 def centred_in(tile_rect, item_size):

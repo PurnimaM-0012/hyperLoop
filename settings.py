@@ -8,6 +8,7 @@ import os
 # BASE_DIR is the folder this file is in, so paths work wherever you run from.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LEVELS_DIR = os.path.join(BASE_DIR, "levels")
+TRACKS_DIR = os.path.join(LEVELS_DIR, "tracks")
 TILES_FILE = os.path.join(LEVELS_DIR, "tiles.json")  # the tile legend
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")        # your tile images go in assets/tiles/
 SAVE_PATH = os.path.join(BASE_DIR, "save.json")
@@ -47,6 +48,36 @@ MESSAGE_TIME = 1.5        # how long a short message stays on screen
 PART_SIZE = 16
 BAG_SLOT_SIZE = 22   # the slot boxes in the HUD, in pixels
 
+# --- Car (Step 9). Speeds in pixels per second; "rates" are per second. ---
+# These numbers ARE the car's feel. Arcade = quick, grippy, easy to drift.
+CAR_LENGTH = 36
+CAR_WIDTH = 20
+CAR_HITBOX = 22             # square used for barrier collisions (simpler than a rotated box)
+CAR_MAX_SPEED = 520
+CAR_ACCELERATION = 420
+CAR_BRAKE = 900             # braking is much stronger than accelerating
+CAR_REVERSE_MAX_SPEED = 160
+CAR_REVERSE_ACCELERATION = 300
+CAR_DRAG = 0.6              # how fast speed fades when you let go (rolling resistance)
+CAR_TURN_RATE = 200         # degrees per second at full steering
+CAR_FULL_STEER_SPEED = 120  # below this speed, steering is weaker (a parked car can't spin)
+CAR_GRIP = 8.0              # how fast sideways sliding is cancelled (high = grippy)
+CAR_HANDBRAKE_GRIP = 1.2    # much lower grip with the handbrake on = drift
+CAR_HANDBRAKE_DRAG = 1.5    # the handbrake also scrubs off some forward speed
+CAR_HANDBRAKE_STEER = 1.3   # and lets you turn a little harder, to kick the back out
+CAR_BOUNCE = 0.4            # fraction of speed kept (reversed) when hitting a barrier
+OFFROAD_DRAG = 1.5          # extra drag on slow tiles like grass
+SKID_SPEED = 90             # sideways speed above which tyres leave skid marks and dust
+SPEED_DISPLAY_SCALE = 0.25  # pixels/second -> the "km/h" shown on the speedometer
+
+# --- Race camera and effects ---
+CAMERA_LOOKAHEAD = 0.3      # the camera aims where the car will be in 0.3 s
+CAMERA_SMOOTHING = 6.0      # how quickly the camera catches up (higher = snappier)
+SHAKE_MIN_IMPACT = 120      # hits slower than this don't shake the screen
+SHAKE_PER_SPEED = 1 / 40    # shake (pixels) per unit of impact speed
+SHAKE_MAX = 10              # strongest shake, in pixels
+SHAKE_DECAY = 30            # pixels of shake lost per second
+
 # --- Colours (red, green, blue), each from 0 to 255 ---
 # Tile colours (walls, floor...) are in levels/tiles.json instead.
 BACKGROUND = (24, 22, 20)   # dark, dusty brown-black for a ruined town
@@ -60,3 +91,7 @@ MACHINE = (160, 150, 135)      # outline of the machine
 EMPTY_SLOT = (55, 50, 46)      # a machine slot with no part in it
 WIN = (120, 210, 110)          # green "cleared" text and built sub-parts
 PORTAL_GLOW = (190, 140, 255)  # the pulsing ring around a portal
+CAR_BODY = (214, 120, 52)      # same rusty orange as the player
+CAR_FRONT = (120, 60, 25)      # darker front, so you can see which way it points
+SKID_MARK = (22, 20, 18)       # tyre marks burnt into the road
+DUST = (150, 135, 110)         # dust puffs when sliding

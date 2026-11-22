@@ -7,13 +7,15 @@
 # sets game.scene to a new scene. Later steps add a RaceScene the same way.
 
 import math
+import random
 
 import pygame
 
 import settings
 from bag import Bag
 from camera import Camera
-from level import Level, read_level_name
+from car import Car
+from level import Level, load_track, read_level_name
 from machine import Part
 from player import Player
 from time_loop import TimeLoop, format_time
@@ -295,6 +297,11 @@ class LevelScene:
             self.show_message("Game saved")
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_q:
             self.drop_item()
+        elif self.state == LevelScene.PLAYING and event.key == pygame.K_c:
+            # DEBUG (Step 9): try the car on the test track. This level scene
+            # is handed over, so coming back resumes it exactly as it was.
+            # While the race scene runs, this scene isn't updated: its timer pauses.
+            self.game.scene = RaceScene(self.game, return_to=self)
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_r:
             self.reset_loop()                      # DEBUG: reset right away
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_b:
@@ -445,3 +452,92 @@ class LevelScene:
             hint_text = "Enter: back to the menu"
         hint = fonts["small"].render(hint_text, True, settings.TEXT)
         screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 50)))
+
+
+# =====================================================================
+#  RACING (Step 9: just the car on a test track; race rules come later)
+# =====================================================================
+
+class RaceScene:
+    def __init__(self, game, return_to, track_id="test_track"):
+        self.game = game
+        self.return_to = return_to  # the scene to go back to (a paused level)
+        self.track_name, self.track, start_angle = load_track(track_id)
+        self.car = Car(self.track.start_tile.center, start_angle)
+        self.camera = Camera()
+
+        # Skid marks are drawn straight onto a copy of the track picture, so
+        # they stay forever (for this visit) and cost nothing to redraw.
+        self.track_picture = self.track.background.copy()
+        # Dust puffs: each is [x, y, velocity_x, velocity_y, seconds_left].
+        self.dust = []
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_c, pygame.K_ESCAPE):
+            self.game.scene = self.return_to  # resume the level where we left it
+
+    def update(self, dt):
+        # Read the controls. key.get_pressed() says which keys are HELD now.
+        keys = pygame.key.get_pressed()
+        throttle = keys[pygame.K_w] or keys[pygame.K_UP]
+        brake = keys[pygame.K_s] or keys[pygame.K_DOWN]
+        steer = 0
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            steer -= 1
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            steer += 1
+        handbrake = keys[pygame.K_SPACE]
+
+        impact = self.car.update(dt, throttle, brake, steer, handbrake, self.track)
+
+        # Game feel: the camera aims slightly AHEAD of the car (where it will be
+        # in a moment), so you see more of the road you're driving towards.
+        look_ahead = self.car.pos + self.car.velocity * settings.CAMERA_LOOKAHEAD
+        self.camera.follow_smoothly(look_ahead, self.track.width, self.track.height, dt)
+
+        # Game feel: shake the screen on hard hits, harder for faster hits.
+        if impact > settings.SHAKE_MIN_IMPACT:
+            self.camera.shake(min(settings.SHAKE_MAX, impact * settings.SHAKE_PER_SPEED))
+        self.camera.update_shake(dt)
+
+        # Game feel: skid marks and dust while sliding sideways.
+        if abs(self.car.sideways_speed()) > settings.SKID_SPEED:
+            self.leave_skid_marks()
+        self.update_dust(dt)
+
+    def leave_skid_marks(self):
+        for wheel in self.car.rear_wheels():
+            pygame.draw.circle(self.track_picture, settings.SKID_MARK, wheel, 2)
+            if random.random() < 0.3:  # a puff now and then, not every frame
+                drift = pygame.Vector2(random.uniform(-30, 30), random.uniform(-30, 30))
+                self.dust.append([wheel.x, wheel.y, drift.x, drift.y, 0.6])
+
+    def update_dust(self, dt):
+        for puff in self.dust:
+            puff[0] += puff[2] * dt
+            puff[1] += puff[3] * dt
+            puff[4] -= dt
+        self.dust = [puff for puff in self.dust if puff[4] > 0]  # remove faded puffs
+
+    def draw(self, screen):
+        car, camera = self.car, self.camera
+        screen.fill(settings.BACKGROUND)
+        screen.blit(self.track_picture, camera.to_screen(self.track_picture.get_rect()))
+        for x, y, _, _, life in self.dust:
+            spot = camera.to_screen(pygame.Rect(round(x), round(y), 0, 0)).topleft
+            pygame.draw.circle(screen, settings.DUST, spot, 2 + life * 6)  # shrinks as it fades
+        car.draw(screen, camera)
+        self.draw_hud(screen)
+
+    def draw_hud(self, screen):
+        fonts = self.game.fonts
+        pygame.draw.rect(screen, settings.HUD_BAR, (0, 0, settings.SCREEN_WIDTH, settings.HUD_HEIGHT))
+        name = fonts["small"].render(f"{self.track_name} (testing)", True, settings.TEXT)
+        screen.blit(name, (16, 36))
+        # Total speed (length of the velocity), so sliding sideways still counts.
+        speed = self.car.velocity.length() * settings.SPEED_DISPLAY_SCALE
+        speed_text = fonts["timer"].render(f"{speed:3.0f} km/h", True, settings.TEXT)
+        screen.blit(speed_text, speed_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 8)))
+        hint = fonts["small"].render("W/S drive   A/D steer   Space drift   C back",
+                                     True, settings.DIM_TEXT)
+        screen.blit(hint, hint.get_rect(topright=(settings.SCREEN_WIDTH - 16, 12)))
