@@ -53,13 +53,13 @@ BAG_SLOT_SIZE = 22   # the slot boxes in the HUD, in pixels
 CAR_LENGTH = 36
 CAR_WIDTH = 20
 CAR_HITBOX = 22             # square used for barrier collisions (simpler than a rotated box)
-CAR_MAX_SPEED = 520
-CAR_ACCELERATION = 420
+CAR_MAX_SPEED = 400         # was 520: felt too fast
+CAR_ACCELERATION = 330      # was 420
 CAR_BRAKE = 900             # braking is much stronger than accelerating
 CAR_REVERSE_MAX_SPEED = 160
 CAR_REVERSE_ACCELERATION = 300
 CAR_DRAG = 0.6              # how fast speed fades when you let go (rolling resistance)
-CAR_TURN_RATE = 150         # degrees per second at full steering (was 200: felt too twitchy)
+CAR_TURN_RATE = 120         # degrees per second at full steering (was 200, then 150: too twitchy)
 CAR_FULL_STEER_SPEED = 120  # below this speed, steering is weaker (a parked car can't spin)
 CAR_STEER_RESPONSE = 6      # how fast steering builds up / eases off: 1 / 6 s = about 0.17 s to full
 CAR_HIGH_SPEED_STEER = 0.6  # at top speed you get 60% of the turn rate (calmer on straights)
@@ -68,12 +68,13 @@ CAR_HANDBRAKE_GRIP = 1.2    # much lower grip with the handbrake on = drift
 CAR_HANDBRAKE_DRAG = 1.5    # the handbrake also scrubs off some forward speed
 CAR_HANDBRAKE_STEER = 1.3   # and lets you turn a little harder, to kick the back out
 CAR_BOUNCE = 0.4            # fraction of speed kept (reversed) when hitting a barrier
-OFFROAD_DRAG = 1.5          # extra drag on slow tiles like grass
+OFFROAD_DRAG = 2.0          # extra drag on slow tiles like grass (was 1.5)
+OFFROAD_SLOWDOWN = 3.0      # how fast speed above the grass limit fades when you drive onto grass
 SKID_SPEED = 90             # sideways speed above which tyres leave skid marks and dust
 SPEED_DISPLAY_SCALE = 0.25  # pixels/second -> the "km/h" shown on the speedometer
 
 # --- Race camera and effects ---
-CAMERA_LOOKAHEAD = 0.3      # the camera aims where the car will be in 0.3 s
+CAMERA_LOOKAHEAD = 0.4      # the camera aims where the car will be in 0.4 s (more room ahead now the track is vertical)
 CAMERA_SMOOTHING = 6.0      # how quickly the camera catches up (higher = snappier)
 SHAKE_MIN_IMPACT = 120      # hits slower than this don't shake the screen
 SHAKE_PER_SPEED = 1 / 40    # shake (pixels) per unit of impact speed

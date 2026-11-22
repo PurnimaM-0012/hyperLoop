@@ -3,7 +3,7 @@
   "#": {"name": "wall", "solid": true, "colour": [88, 82, 76]},
   ".": {"name": "floor", "solid": false, "colour": [34, 31, 28]},
   "P": {"name": "portal", "solid": false, "colour": [90, 50, 140]},
-  ",": {"name": "grass", "solid": false, "colour": [58, 72, 44], "speed": 0.5},
+  ",": {"name": "grass", "solid": false, "colour": [58, 72, 44], "speed": 0.35},
   "=": {"name": "start line", "solid": false, "colour": [225, 225, 225], "pattern": "checker"},
   ">": {"name": "arrow right", "solid": false, "colour": [34, 31, 28], "arrow": 0},
   "v": {"name": "arrow down", "solid": false, "colour": [34, 31, 28], "arrow": 90},

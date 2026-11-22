@@ -134,7 +134,13 @@ class Car:
 
         # --- 6. Speed limits (lower on slow tiles like grass).
         top = settings.CAR_MAX_SPEED * terrain
-        forward_part = max(-settings.CAR_REVERSE_MAX_SPEED, min(forward_part, top))
+        if forward_part > top and terrain < 1:
+            # Driving onto grass: bleed off the extra speed over a moment,
+            # instead of cutting it instantly (which feels like hitting a wall).
+            forward_part = top + fade(forward_part - top, settings.OFFROAD_SLOWDOWN, dt)
+        else:
+            forward_part = min(forward_part, top)
+        forward_part = max(-settings.CAR_REVERSE_MAX_SPEED, forward_part)
 
         # Put the two parts back together.
         self.velocity = forward * forward_part + right * sideways_part
