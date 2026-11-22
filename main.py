@@ -12,6 +12,7 @@
 #                   C              DEBUG: drive the car on the test track (C or Esc to come back)
 #
 # Keys on the track: W/S throttle and brake, A/D steer, Space handbrake (drift)
+#                    Tab live tuning panel ([ ] choose, - = change, Backspace reset, F6 save)
 #                   T              DEBUG: pretend you won a race (+20 s now and on future loops)
 
 import os
@@ -21,6 +22,7 @@ import pygame
 import settings
 from progress import Progress
 from scenes import MenuScene
+from tuning import TuningPanel
 
 
 class Game:
@@ -37,6 +39,9 @@ class Game:
         # PERSISTENT state, loaded from the save file if there is one.
         self.progress, _ = Progress.load(settings.SAVE_PATH)
         self.running = True
+        # One live tuning panel for the whole session (Tab on the race track),
+        # so it remembers the starting values from settings.py.
+        self.tuning = TuningPanel()
         self.scene = MenuScene(self)
 
     def save_exists(self):

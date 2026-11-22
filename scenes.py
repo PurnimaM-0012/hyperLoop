@@ -473,7 +473,11 @@ class RaceScene:
         self.dust = []
 
     def handle_event(self, event):
+        # The live tuning panel gets first look at every key (see tuning.py).
+        if self.game.tuning.handle_event(event):
+            return
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_c, pygame.K_ESCAPE):
+            self.game.tuning.close()
             self.game.scene = self.return_to  # resume the level where we left it
 
     def update(self, dt):
@@ -528,6 +532,7 @@ class RaceScene:
             pygame.draw.circle(screen, settings.DUST, spot, 2 + life * 6)  # shrinks as it fades
         car.draw(screen, camera)
         self.draw_hud(screen)
+        self.game.tuning.draw(screen, self.game.fonts)
 
     def draw_hud(self, screen):
         fonts = self.game.fonts
@@ -538,6 +543,6 @@ class RaceScene:
         speed = self.car.velocity.length() * settings.SPEED_DISPLAY_SCALE
         speed_text = fonts["timer"].render(f"{speed:3.0f} km/h", True, settings.TEXT)
         screen.blit(speed_text, speed_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 8)))
-        hint = fonts["small"].render("W/S drive   A/D steer   Space drift   C back",
+        hint = fonts["small"].render("WASD drive   Space drift   Tab tune   C back",
                                      True, settings.DIM_TEXT)
         screen.blit(hint, hint.get_rect(topright=(settings.SCREEN_WIDTH - 16, 12)))
