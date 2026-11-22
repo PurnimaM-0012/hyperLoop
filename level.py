@@ -58,8 +58,28 @@ def load_tile_types():
             "colour": tuple(info["colour"]),
             "image": image,
             "speed": info.get("speed", 1.0),  # 1 = normal; grass is slower
+            "pattern": info.get("pattern"),   # "checker" for start/finish lines
+            "arrow": info.get("arrow"),       # an angle to paint an arrow, or None
         }
     return tile_types
+
+
+def draw_tile_markings(surface, tile, tile_rect):
+    """Paint extra markings on a tile: a checkerboard or a direction arrow."""
+    if tile["pattern"] == "checker":
+        square = settings.TILE_SIZE // 4  # a 4 x 4 checkerboard
+        for row in range(4):
+            for column in range(4):
+                if (row + column) % 2 == 1:  # every other square is black
+                    pygame.draw.rect(surface, (20, 20, 20),
+                                     (tile_rect.x + column * square, tile_rect.y + row * square, square, square))
+    if tile["arrow"] is not None:
+        # A chevron pointing right, then rotated to the tile's angle around
+        # the tile's centre. Vector2.rotate() turns a point by an angle.
+        centre = pygame.Vector2(tile_rect.center)
+        shape = [(-9, -13), (10, 0), (-9, 13), (-3, 0)]
+        points = [centre + pygame.Vector2(p).rotate(tile["arrow"]) for p in shape]
+        pygame.draw.polygon(surface, settings.ROAD_ARROW, points)
 
 
 def load_track(track_id):
@@ -135,6 +155,7 @@ class Area:
                     self.background.blit(tile["image"], tile_rect)
                 else:
                     pygame.draw.rect(self.background, tile["colour"], tile_rect)
+                draw_tile_markings(self.background, tile, tile_rect)
                 if tile["solid"]:
                     self.walls.append(tile_rect)
                 self.speed_grid[row].append(tile["speed"])

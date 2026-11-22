@@ -1,7 +1,12 @@
 {
-  "_help": "One entry per map symbol. solid = blocks movement. colour = [red, green, blue], used when there is no image. image = optional 32x32 PNG inside the assets folder, e.g. \"tiles/wall.png\". speed = optional multiplier for how fast cars can go on it (1 = normal, 0.5 = half). S, M and the digits are reserved for the start, the machine and parts; they stand on a '.' floor tile.",
+  "_help": "One entry per map symbol. solid = blocks movement. colour = [red, green, blue], used when there is no image. image = optional 32x32 PNG inside the assets folder, e.g. \"tiles/wall.png\". speed = optional multiplier for how fast cars can go on it (1 = normal, 0.5 = half). pattern = \"checker\" draws a black-and-white checkerboard (start/finish lines). arrow = draws a direction arrow on the tile, pointing at that angle (0 = right, 90 = down, 180 = left, 270 = up). S, M and the digits are reserved for the start, the machine and parts; they stand on a '.' floor tile.",
   "#": {"name": "wall", "solid": true, "colour": [88, 82, 76]},
   ".": {"name": "floor", "solid": false, "colour": [34, 31, 28]},
   "P": {"name": "portal", "solid": false, "colour": [90, 50, 140]},
-  ",": {"name": "grass", "solid": false, "colour": [58, 72, 44], "speed": 0.5}
+  ",": {"name": "grass", "solid": false, "colour": [58, 72, 44], "speed": 0.5},
+  "=": {"name": "start line", "solid": false, "colour": [225, 225, 225], "pattern": "checker"},
+  ">": {"name": "arrow right", "solid": false, "colour": [34, 31, 28], "arrow": 0},
+  "v": {"name": "arrow down", "solid": false, "colour": [34, 31, 28], "arrow": 90},
+  "<": {"name": "arrow left", "solid": false, "colour": [34, 31, 28], "arrow": 180},
+  "^": {"name": "arrow up", "solid": false, "colour": [34, 31, 28], "arrow": 270}
 }

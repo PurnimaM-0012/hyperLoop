@@ -59,8 +59,10 @@ CAR_BRAKE = 900             # braking is much stronger than accelerating
 CAR_REVERSE_MAX_SPEED = 160
 CAR_REVERSE_ACCELERATION = 300
 CAR_DRAG = 0.6              # how fast speed fades when you let go (rolling resistance)
-CAR_TURN_RATE = 200         # degrees per second at full steering
+CAR_TURN_RATE = 150         # degrees per second at full steering (was 200: felt too twitchy)
 CAR_FULL_STEER_SPEED = 120  # below this speed, steering is weaker (a parked car can't spin)
+CAR_STEER_RESPONSE = 6      # how fast steering builds up / eases off: 1 / 6 s = about 0.17 s to full
+CAR_HIGH_SPEED_STEER = 0.6  # at top speed you get 60% of the turn rate (calmer on straights)
 CAR_GRIP = 8.0              # how fast sideways sliding is cancelled (high = grippy)
 CAR_HANDBRAKE_GRIP = 1.2    # much lower grip with the handbrake on = drift
 CAR_HANDBRAKE_DRAG = 1.5    # the handbrake also scrubs off some forward speed
@@ -94,4 +96,5 @@ PORTAL_GLOW = (190, 140, 255)  # the pulsing ring around a portal
 CAR_BODY = (214, 120, 52)      # same rusty orange as the player
 CAR_FRONT = (120, 60, 25)      # darker front, so you can see which way it points
 SKID_MARK = (22, 20, 18)       # tyre marks burnt into the road
+ROAD_ARROW = (175, 160, 120)   # direction arrows painted on the track
 DUST = (150, 135, 110)         # dust puffs when sliding

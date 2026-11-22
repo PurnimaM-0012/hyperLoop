@@ -27,6 +27,10 @@ class Car:
         self.pos = pygame.Vector2(start_centre)  # centre of the car, world coordinates
         self.angle = start_angle                 # degrees
         self.velocity = pygame.Vector2(0, 0)     # pixels per second
+        # How far the "steering wheel" is turned: -1 (full left) to 1 (full
+        # right). Keys are on/off, so instead of jumping to full lock we
+        # move this towards the key's value a little each frame.
+        self.steering = 0.0
         self.rect = pygame.Rect(0, 0, settings.CAR_HITBOX, settings.CAR_HITBOX)
         self.rect.center = (round(self.pos.x), round(self.pos.y))
 
@@ -68,17 +72,30 @@ class Car:
     def update(self, dt, throttle, brake, steer, handbrake, area):
         """Drive for dt seconds.
 
-        throttle, brake, handbrake: True/False.  steer: -1 (left), 0, or 1 (right).
+        throttle, brake, handbrake: True/False.  steer: the keys, -1 (left), 0, or 1 (right).
         area: the track, for barriers and tile speeds.
         Returns how hard the car hit a barrier this frame (0 = no hit).
         """
         speed = self.forward_speed()
 
-        # --- 1. Steering. Weaker at low speed (a parked car can't spin), and
-        # reversed when going backwards, like a real car.
+        # --- 1. Steering.
+        # (a) Ease the steering wheel towards the key's value (-1, 0 or 1),
+        # by at most CAR_STEER_RESPONSE per second. A quick tap then only
+        # turns the wheel a little, which makes small corrections possible.
+        step = settings.CAR_STEER_RESPONSE * dt
+        if self.steering < steer:
+            self.steering = min(steer, self.steering + step)
+        elif self.steering > steer:
+            self.steering = max(steer, self.steering - step)
+        # (b) Weaker at low speed (a parked car can't spin)...
         steer_strength = min(1, abs(speed) / settings.CAR_FULL_STEER_SPEED)
+        # (c) ...and calmer at high speed: full turn rate when slow, down to
+        # CAR_HIGH_SPEED_STEER of it at top speed.
+        speed_share = min(1, abs(speed) / settings.CAR_MAX_SPEED)
+        steer_strength *= 1 - (1 - settings.CAR_HIGH_SPEED_STEER) * speed_share
+        # (d) Reversed when going backwards, like a real car.
         direction = 1 if speed >= 0 else -1
-        turn = settings.CAR_TURN_RATE * steer * steer_strength * direction * dt
+        turn = settings.CAR_TURN_RATE * self.steering * steer_strength * direction * dt
         if handbrake:
             turn *= settings.CAR_HANDBRAKE_STEER
         self.angle = (self.angle + turn) % 360
