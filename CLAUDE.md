@@ -56,7 +56,7 @@ Key rule: **loop state** is reset by `reset_loop()`; **persistent state** lives 
 Steps 1-9 done (loop, movement, timer, parts, progress/saving, levels/menu, research
 facility + portals + camera, bag, arcade car on a vertical test track with live
 tuning; debug key C opens it from a level). Next: Step 10 (race rules).
-Later: repairs/fuel/salvage, race rules, rival AI, weapons, utilities. See the design doc.
+Typing values in the tuning panel is done (Enter on a setting). Later: repairs/fuel/salvage, race rules, rival AI, weapons, utilities. See the design doc.
 
 ## Conventions
 
