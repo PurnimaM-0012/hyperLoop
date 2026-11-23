@@ -9,6 +9,8 @@
 #   [ and ]    choose the previous / next setting
 #   - and =    lower / raise the chosen setting (hold to repeat)
 #   Backspace  put the chosen setting back to its starting value
+#   Enter      type a value: digits and '.', Backspace deletes,
+#              Enter applies, Esc cancels
 #   F6         save all values to tuning.txt
 
 import os
@@ -53,11 +55,18 @@ class TuningPanel:
         # showing what changed. getattr(settings, "X") reads settings.X.
         self.original = {name: getattr(settings, name) for name, _, _ in TUNABLE}
         self.message = ""
+        # Typing mode: while True, key presses build up a number in 'typed'.
+        self.editing = False
+        self.typed = ""
 
     def handle_event(self, event):
         """Handle a key press. Returns True if the panel used it."""
         if event.type != pygame.KEYDOWN:
             return False
+        if self.visible and self.editing:
+            self.handle_typing(event)
+            return True  # while typing, every key belongs to the panel
+        self.message = ""  # any other key clears the last message
         if event.key == pygame.K_TAB:
             self.visible = not self.visible
             # Key repeat: while the panel is open, holding - or = keeps
@@ -78,11 +87,39 @@ class TuningPanel:
             self.change(name, -step)
         elif event.key == pygame.K_BACKSPACE:
             setattr(settings, name, self.original[name])
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.editing = True   # start typing a new value
+            self.typed = ""
         elif event.key == pygame.K_F6:
             self.save()
         else:
             return False
         return True
+
+    def handle_typing(self, event):
+        """Build up a typed number, then apply it (Enter) or cancel (Esc)."""
+        name = TUNABLE[self.selected][0]
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.editing = False
+            if self.typed == "":
+                return  # nothing typed: treat it like cancelling
+            try:
+                value = float(self.typed)  # float("1.5") -> 1.5; float("") or "1.2.3" fail
+            except ValueError:
+                self.message = f"'{self.typed}' isn't a number - nothing changed"
+                return
+            if value.is_integer() and isinstance(self.original[name], int):
+                value = int(value)  # keep whole-number settings as whole numbers
+            setattr(settings, name, value)
+            self.message = f"{name} = {show(value)}"
+        elif event.key == pygame.K_ESCAPE:
+            self.editing = False  # cancel: the value stays as it was
+        elif event.key == pygame.K_BACKSPACE:
+            self.typed = self.typed[:-1]  # remove the last character
+        elif event.unicode and event.unicode in "0123456789.":
+            # event.unicode is the character the key typed, whatever the
+            # keyboard layout, so this works with the number row and keypad.
+            self.typed += event.unicode
 
     def change(self, name, amount):
         # setattr(settings, "X", v) does settings.X = v. round() stops tiny
@@ -93,6 +130,7 @@ class TuningPanel:
     def close(self):
         """Call when leaving the track, so key repeat doesn't stay on."""
         self.visible = False
+        self.editing = False
         pygame.key.set_repeat(0)
 
     def save(self):
@@ -121,7 +159,7 @@ class TuningPanel:
         screen.blit(box, panel.topleft)
 
         y = panel.top + 10
-        title = font.render("LIVE TUNING   [ ] choose   - = change", True, settings.TEXT)
+        title = font.render("LIVE TUNING  [ ] choose  - = change  Enter type", True, settings.TEXT)
         screen.blit(title, (panel.left + 12, y))
         y += row_height + 6
         for i, (name, _, _) in enumerate(TUNABLE):
@@ -137,11 +175,19 @@ class TuningPanel:
             label = font.render(f"{marker} {name}", True, colour)
             screen.blit(label, (panel.left + 12, y))
             text = show(value) + ("  *" if changed else "")
+            if i == self.selected and self.editing:
+                text = self.typed + "_"  # the input box, with a cursor
+                colour = settings.TEXT
+                box = pygame.Rect(panel.right - 120, y - 2, 108, row_height)
+                pygame.draw.rect(screen, settings.HIGHLIGHT, box, width=1)
             number = font.render(text, True, colour)
             screen.blit(number, number.get_rect(topright=(panel.right - 12, y)))
             y += row_height
 
         _, _, description = TUNABLE[self.selected]
-        footer = self.message or f"{description}   (Backspace reset, F6 save)"
+        if self.editing:
+            footer = "Type a number   Enter apply   Esc cancel"
+        else:
+            footer = self.message or f"{description}   (Backspace reset, F6 save)"
         hint = font.render(footer, True, settings.DIM_TEXT)
         screen.blit(hint, (panel.left + 12, y + 4))
