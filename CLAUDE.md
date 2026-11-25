@@ -38,15 +38,16 @@ Debug keys: R reset loop, B +1 bag slot.
 |---|---|
 | `main.py` | Window, `Game` object (fonts, progress, current scene), the game loop |
 | `scenes.py` | `MenuScene` and `LevelScene` (timer, `reset_loop()`, portals, parts, HUD) |
-| `level.py` | Loads levels from `levels/*.json`: areas (text maps), walls, parts, machine, portals, each level's `track` and `loop_cap`; `load_track()` adds the finish line and checkpoints |
+| `level.py` | Loads levels from `levels/*.json`: areas (text maps), walls, parts, machine, portals, each level's `track` (null = no race) and `loop_cap`; `Track` loads a race track: finish line, checkpoints, rival starts, waypoints |
 | `levels/` | Level files, `areas/` maps, and `tiles.json` (the tile legend: symbol -> solid, colour, image) |
 | `player.py` | Movement with `dt`, axis-by-axis wall collision, `teleport()` |
 | `bag.py` | Limited-slot inventory; items have `kind` and `persistent` |
 | `machine.py` | `Part` (states ON_GROUND / CARRIED / INSTALLED, dropping) and `Machine` |
 | `camera.py` | World -> screen coordinates, follows the player, clamps at map edges; smooth follow and screen shake for racing |
-| `car.py` | Arcade car: angle + velocity, eased steering, grip/handbrake drift, grass slowdown, barrier bounce |
+| `car.py` | Arcade car: angle + velocity, eased steering, grip/handbrake drift, grass slowdown, barrier bounce; health, `take_damage()`, wrecks; `bump_cars()` for car-to-car crashes |
+| `rival.py` | `RivalDriver`: steers a rival car along the track's waypoints; the 6-tile, 15% coin-flip rubber band |
 | `tuning.py` | Live tuning panel on the track (Tab); F6 writes `tuning.txt` |
-| `levels/tracks/` | Race tracks as text maps (`=` start/finish line, digits `1` `2` `3` = checkpoints in order, `>` `v` `<` `^` arrows, `,` grass) |
+| `levels/tracks/` | Race tracks as text maps (`=` start/finish line, digits `1` `2` `3` = checkpoints in order, `>` `v` `<` `^` arrows, `,` grass at 25% speed), plus `rival_starts` and `waypoints` |
 | `time_loop.py` | The countdown and `format_time()` |
 | `progress.py` | Persistent state (never touched by `reset_loop()`), saved to `save.json`; `best_bonus` per level, and `loop_length()` worked out from it |
 | `settings.py` | Every tunable number and colour |
@@ -55,11 +56,15 @@ Key rule: **loop state** is reset by `reset_loop()`; **persistent state** lives 
 
 ## Status
 
-Steps 1-10 done (loop, movement, timer, parts, progress/saving, levels/menu, research
+Steps 1-11 done (loop, movement, timer, parts, progress/saving, levels/menu, research
 facility + portals + camera, bag, arcade car with live tuning, race rules: "Race? Y/N"
 at the 40% mark with the timer paused, 1 lap with checkpoints, bonus = slot + time left,
-best bonus per level, loop cap 160 s placeholder, skip to race, race after clearing).
-Next: Step 11 (rival AI). Later: repairs/fuel/salvage, weapons, utilities. See the design doc.
+best bonus per level, loop cap 160 s placeholder, skip to race, race after clearing;
+rival AI with the same car settings, car health 100 with damage from barriers and
+car crashes, wrecks lose / all rivals wrecked wins at once).
+Race rules: no race in the Prison (races start at the Research Facility); a bonus only
+counts on the first visit to a level (replays are practice).
+Next: Step 12 (weapons). Later: repairs/fuel/salvage, utilities, town puzzles/traps/NPCs. See the design doc.
 
 ## Conventions
 

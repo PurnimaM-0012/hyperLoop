@@ -1,6 +1,11 @@
 {
   "name": "Test track",
   "start_angle": 270,
+  "_rivals": "rival_starts and waypoints are [column, row] tiles. Rivals steer from waypoint to waypoint, in order, then wrap back to the first.",
+  "rival_starts": [[13, 68]],
+  "waypoints": [[11, 40], [12, 14], [18, 7], [30, 6], [40, 7], [46, 13], [50, 30], [50, 38],
+                [42, 44], [37, 48], [40, 52], [48, 57], [50, 66], [48, 72], [40, 77], [25, 78],
+                [14, 76], [11, 70], [11, 62]],
   "map": [
     "############################################################",
     "#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,#",

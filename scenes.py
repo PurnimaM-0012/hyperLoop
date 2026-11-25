@@ -15,10 +15,11 @@ import pygame
 import settings
 from bag import Bag
 from camera import Camera
-from car import Car
-from level import Level, load_track, read_level_name
+from car import Car, bump_cars
+from level import Level, Track, read_level_name
 from machine import Part
 from player import Player
+from rival import RivalDriver
 from time_loop import TimeLoop, format_time
 
 
@@ -552,49 +553,77 @@ class LevelScene:
 
 
 # =====================================================================
-#  RACING (Step 10: one lap against the clock; the rival comes in Step 11)
+#  RACING (Step 11: one lap against a rival and the clock)
 # =====================================================================
 
 class RaceScene:
     RACING = "racing"
-    WON = "won"          # crossed the line after every checkpoint, in time
-    LOST = "lost"        # the race slot ran out, or the player gave up
+    WON = "won"          # first over the line, or every rival wrecked
+    LOST = "lost"        # out of time, gave up, wrecked, or a rival won
 
     def __init__(self, game, return_to, track_id, slot):
         self.game = game
         self.return_to = return_to  # the paused LevelScene; we report back to it
-        self.track_name, self.track, start_angle, self.checkpoints = load_track(track_id)
-        self.car = Car(self.track.start_tile.center, start_angle)
+        self.track = Track(track_id)
+        area = self.track.area
+        self.car = Car(area.start_tile.center, self.track.start_angle)
+        # Rivals: the same Car with the same settings, in another colour,
+        # each driven by a RivalDriver instead of the keyboard.
+        self.rivals = []
+        for start in self.track.rival_starts:
+            rival_car = Car(start, self.track.start_angle, settings.RIVAL_BODY, settings.RIVAL_FRONT)
+            self.rivals.append(RivalDriver(rival_car, self.track.waypoints))
         self.camera = Camera()
 
         # The race clock. The race slot is the time left in the loop, so
         # running out here means the loop is over.
         self.slot = slot
         self.time_left = slot
-        # Index of the next checkpoint to drive through (0 = checkpoint 1).
-        # When it equals len(self.checkpoints), the finish line counts.
-        self.next_checkpoint = 0
+        # Each car's next checkpoint (0 = checkpoint 1). When it equals the
+        # number of checkpoints, that car's next crossing of the line wins.
+        # A dictionary can use any object as a key, here each Car.
+        self.next_checkpoint = {car: 0 for car in self.all_cars()}
         self.state = RaceScene.RACING
+        self.lost_reason = ""
         self.bonus = 0
         self.new_best = False
 
         # Skid marks are drawn straight onto a copy of the track picture, so
         # they stay forever (for this visit) and cost nothing to redraw.
-        self.track_picture = self.track.background.copy()
+        self.track_picture = area.background.copy()
         # Dust puffs: each is [x, y, velocity_x, velocity_y, seconds_left].
         self.dust = []
 
+    def all_cars(self):
+        return [self.car] + [rival.car for rival in self.rivals]
+
     # ---------------- race rules ----------------
 
-    def check_progress(self):
-        """Checkpoints in order, then the finish line."""
-        car_box = self.car.rect
-        if self.next_checkpoint < len(self.checkpoints):
+    def crossed_line(self, car):
+        """Checkpoints in order, then the finish line. True when 'car' finishes."""
+        checkpoints = self.track.checkpoints
+        index = self.next_checkpoint[car]
+        if index < len(checkpoints):
             # collidelist() gives the index of the first rect touched, or -1.
-            if car_box.collidelist(self.checkpoints[self.next_checkpoint]) != -1:
-                self.next_checkpoint += 1
-        elif car_box.collidelist(self.track.finish_tiles) != -1:
+            if car.rect.collidelist(checkpoints[index]) != -1:
+                self.next_checkpoint[car] = index + 1
+            return False
+        return car.rect.collidelist(self.track.area.finish_tiles) != -1
+
+    def check_result(self):
+        """Has the race been decided this frame?"""
+        if self.car.wrecked:
+            self.lose("Your car is wrecked")
+        elif self.rivals and all(rival.car.wrecked for rival in self.rivals):
+            # Every rival is wrecked: you win at once, keeping the time left.
             self.win()
+        elif self.crossed_line(self.car):
+            self.win()
+        else:
+            for rival in self.rivals:
+                if not rival.car.wrecked and self.crossed_line(rival.car):
+                    self.lose("The rival finished first")
+                    break
 
     def win(self):
         # Design doc: bonus = the race slot + the time left in it at the finish.
@@ -602,6 +631,10 @@ class RaceScene:
         self.bonus = round(self.slot + self.time_left, 1)
         self.new_best = self.return_to.record_race_win(self.bonus)
         self.end(RaceScene.WON)
+
+    def lose(self, reason):
+        self.lost_reason = reason
+        self.end(RaceScene.LOST)
 
     def end(self, result):
         self.state = result
@@ -616,38 +649,71 @@ class RaceScene:
         if event.type != pygame.KEYDOWN:
             return
         if self.state == RaceScene.RACING and event.key == pygame.K_ESCAPE:
-            self.end(RaceScene.LOST)  # giving up counts as running out of time
+            self.lose("You gave up")
         elif self.state != RaceScene.RACING and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             self.return_to.race_over(self.state == RaceScene.WON, self.bonus)
 
-    def update(self, dt):
-        throttle = brake = handbrake = False
+    def player_controls(self):
+        """Your keys. key.get_pressed() says which keys are HELD now."""
+        keys = pygame.key.get_pressed()
+        throttle = keys[pygame.K_w] or keys[pygame.K_UP]
+        brake = keys[pygame.K_s] or keys[pygame.K_DOWN]
         steer = 0
-        if self.state == RaceScene.RACING:
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            steer -= 1
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            steer += 1
+        return throttle, brake, steer, keys[pygame.K_SPACE]
+
+    def drive(self, car, controls, dt):
+        """Move one car for this frame and apply barrier damage.
+        A wreck doesn't move. Returns how hard it hit a barrier."""
+        if car.wrecked:
+            return 0
+        throttle, brake, steer, handbrake = controls
+        impact = car.update(dt, throttle, brake, steer, handbrake, self.track.area)
+        car.take_damage(impact)
+        return impact
+
+    def update(self, dt):
+        racing = (self.state == RaceScene.RACING)
+        if racing:
             self.time_left -= dt
             if self.time_left <= 0:
                 self.time_left = 0
-                self.end(RaceScene.LOST)
-            else:
-                # Read the controls. key.get_pressed() says which keys are HELD now.
-                keys = pygame.key.get_pressed()
-                throttle = keys[pygame.K_w] or keys[pygame.K_UP]
-                brake = keys[pygame.K_s] or keys[pygame.K_DOWN]
-                if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                    steer -= 1
-                if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                    steer += 1
-                handbrake = keys[pygame.K_SPACE]
-        # After the race the car keeps rolling with no input, so it coasts
-        # to a stop behind the result screen instead of freezing.
-        impact = self.car.update(dt, throttle, brake, steer, handbrake, self.track)
-        if self.state == RaceScene.RACING:
-            self.check_progress()
+                self.lose("Out of time")
+                racing = False
+
+        # 1. Drive every car. After the race they get no input and coast to
+        # a stop behind the result screen instead of freezing.
+        no_input = (False, False, 0, False)
+        impact = self.drive(self.car, self.player_controls() if racing else no_input, dt)
+        for rival in self.rivals:
+            if racing:
+                rival.rubber_band(self.car)
+            self.drive(rival.car, rival.controls() if racing else no_input, dt)
+
+        # 2. Car-to-car crashes: check every PAIR of cars once. Both cars in
+        # a crash lose health, the same way as hitting a barrier.
+        cars = self.all_cars()
+        for i in range(len(cars)):
+            for j in range(i + 1, len(cars)):
+                crash = bump_cars(cars[i], cars[j])
+                if crash > 0:
+                    cars[i].take_damage(crash)
+                    cars[j].take_damage(crash)
+                    if cars[i] is self.car:
+                        impact = max(impact, crash)  # you feel your own crashes
+
+        # 3. The rules: wrecks, checkpoints and the finish.
+        if racing:
+            self.check_result()
 
         # Game feel: the camera aims slightly AHEAD of the car (where it will be
         # in a moment), so you see more of the road you're driving towards.
         look_ahead = self.car.pos + self.car.velocity * settings.CAMERA_LOOKAHEAD
-        self.camera.follow_smoothly(look_ahead, self.track.width, self.track.height, dt)
+        area = self.track.area
+        self.camera.follow_smoothly(look_ahead, area.width, area.height, dt)
 
         # Game feel: shake the screen on hard hits, harder for faster hits.
         if impact > settings.SHAKE_MIN_IMPACT:
@@ -655,12 +721,13 @@ class RaceScene:
         self.camera.update_shake(dt)
 
         # Game feel: skid marks and dust while sliding sideways.
-        if abs(self.car.sideways_speed()) > settings.SKID_SPEED:
-            self.leave_skid_marks()
+        for car in cars:
+            if abs(car.sideways_speed()) > settings.SKID_SPEED:
+                self.leave_skid_marks(car)
         self.update_dust(dt)
 
-    def leave_skid_marks(self):
-        for wheel in self.car.rear_wheels():
+    def leave_skid_marks(self, car):
+        for wheel in car.rear_wheels():
             pygame.draw.circle(self.track_picture, settings.SKID_MARK, wheel, 2)
             if random.random() < 0.3:  # a puff now and then, not every frame
                 drift = pygame.Vector2(random.uniform(-30, 30), random.uniform(-30, 30))
@@ -674,22 +741,43 @@ class RaceScene:
         self.dust = [puff for puff in self.dust if puff[4] > 0]  # remove faded puffs
 
     def draw(self, screen):
-        car, camera = self.car, self.camera
+        camera = self.camera
         screen.fill(settings.BACKGROUND)
         screen.blit(self.track_picture, camera.to_screen(self.track_picture.get_rect()))
         for x, y, _, _, life in self.dust:
             spot = camera.to_screen(pygame.Rect(round(x), round(y), 0, 0)).topleft
             pygame.draw.circle(screen, settings.DUST, spot, 2 + life * 6)  # shrinks as it fades
-        car.draw(screen, camera)
+        for rival in self.rivals:
+            rival.car.draw(screen, camera)
+        self.car.draw(screen, camera)  # yours last, so it's on top
         self.draw_hud(screen)
         if self.state != RaceScene.RACING:
             self.draw_result(screen)
         self.game.tuning.draw(screen, self.game.fonts)
 
+    def draw_health(self, screen, topleft):
+        """Your car's health bar: green, yellow at 50% or less, red at 15% or less."""
+        share = self.car.health_share()
+        if share <= settings.HEALTH_CRITICAL:
+            colour = settings.HEALTH_BAD
+        elif share <= settings.HEALTH_LOW:
+            colour = settings.HEALTH_WARN
+        else:
+            colour = settings.HEALTH_GOOD
+        bar = pygame.Rect(topleft, (160, 14))
+        pygame.draw.rect(screen, settings.HEALTH_BACK, bar)
+        filled = bar.copy()
+        filled.width = round(bar.width * share)
+        pygame.draw.rect(screen, colour, filled)
+        label = self.game.fonts["small"].render(f"Car {self.car.health:.0f}", True, settings.TEXT)
+        screen.blit(label, label.get_rect(midleft=(bar.right + 8, bar.centery)))
+
     def draw_hud(self, screen):
         fonts = self.game.fonts
         pygame.draw.rect(screen, settings.HUD_BAR, (0, 0, settings.SCREEN_WIDTH, settings.HUD_HEIGHT))
-        name = fonts["small"].render(self.track_name, True, settings.TEXT)
+        # Top left: health, beside the FPS counter (drawn by main.py); the track below.
+        self.draw_health(screen, (96, 14))
+        name = fonts["small"].render(self.track.name, True, settings.TEXT)
         screen.blit(name, (16, 36))
 
         # Centre: the race clock, red in the last few seconds, and what's next.
@@ -697,10 +785,9 @@ class RaceScene:
         clock = fonts["timer"].render(format_time(self.time_left), True, colour)
         clock_rect = clock.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 4))
         screen.blit(clock, clock_rect)
-        if self.next_checkpoint < len(self.checkpoints):
-            goal = f"Checkpoint {self.next_checkpoint + 1} of {len(self.checkpoints)}"
-        else:
-            goal = "To the finish line!"
+        done = self.next_checkpoint[self.car]
+        total = len(self.track.checkpoints)
+        goal = f"Checkpoint {done + 1} of {total}" if done < total else "To the finish line!"
         goal_text = fonts["small"].render(goal, True, settings.DIM_TEXT)
         screen.blit(goal_text, goal_text.get_rect(midtop=(clock_rect.centerx, clock_rect.bottom)))
 
@@ -721,8 +808,11 @@ class RaceScene:
         after_clearing = (self.return_to.state == LevelScene.CLEARED)
         if self.state == RaceScene.WON:
             title, colour = "You won!", settings.WIN
-            lap = self.slot - self.time_left
-            lines = [f"Lap {lap:.1f} s.  Bonus: {self.slot:.1f} + {self.time_left:.1f} = {self.bonus:.1f} s"]
+            if self.rivals and all(rival.car.wrecked for rival in self.rivals):
+                lines = ["Every rival is wrecked!"]
+            else:
+                lines = [f"Lap {self.slot - self.time_left:.1f} s."]
+            lines[0] += f"  Bonus: {self.slot:.1f} + {self.time_left:.1f} = {self.bonus:.1f} s"
             if not self.return_to.bonus_counts:
                 lines.append("Practice: this level is already cleared, so loops don't get longer")
             elif self.new_best:
@@ -735,7 +825,7 @@ class RaceScene:
             else:
                 lines.append(f"Enter: back to town with {format_time(self.bonus)} on the clock")
         else:
-            title, colour = "Out of time!", settings.TIMER_WARNING
+            title, colour = self.lost_reason + "!", settings.TIMER_WARNING
             if after_clearing:
                 lines = ["No bonus this time.", "Enter: back"]
             else:

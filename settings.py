@@ -43,6 +43,22 @@ LEVEL_ORDER = ["prison", "research_facility"]
 RACE_SHARE = 0.4  # the race is the last 40% of the loop: 32 s of an 80 s loop
 # Each level's loop cap is in its level file ("loop_cap"), since it's level content.
 
+# --- Car health and crashes (Step 11) ---
+CAR_HEALTH = 100            # full health at the start of every race
+CAR_FULL_HIT_DAMAGE = 25    # damage from a hit at full road speed (4 big hits = wrecked); slower hits cost less
+CAR_DAMAGE_MIN_IMPACT = 120 # hits slower than this (light taps) cost nothing
+CAR_CRASH_RADIUS = 14       # cars count as circles this big when they hit each other
+HEALTH_LOW = 0.5            # the health bar turns yellow at or below 50%...
+HEALTH_CRITICAL = 0.15      # ...and red at or below 15%
+
+# --- Rival AI (Step 11). Same car settings as yours; these are how it DRIVES. ---
+RIVAL_WAYPOINT_REACH = 3    # tiles: this close to a waypoint, it aims for the next one
+RIVAL_STEER_DEADZONE = 8    # degrees: smaller errors than this aren't corrected (no wobbling)
+RIVAL_BRAKE_ANGLE = 50      # degrees: brake for corners sharper than this...
+RIVAL_BRAKE_SPEED = 220     # ...when going faster than this
+RUBBER_BAND_DISTANCE = 6    # tiles: within this distance of you, the rival flips a coin...
+RUBBER_BAND_CHANGE = 0.15   # ...and drives 15% faster or slower until it's further away
+
 # --- Time loop ---
 WARNING_TIME = 10         # the timer turns red at or below this many seconds
 MESSAGE_TIME = 1.5        # how long a short message stays on screen
@@ -102,3 +118,11 @@ CAR_FRONT = (120, 60, 25)      # darker front, so you can see which way it point
 SKID_MARK = (22, 20, 18)       # tyre marks burnt into the road
 ROAD_ARROW = (175, 160, 120)   # direction arrows painted on the track
 DUST = (150, 135, 110)         # dust puffs when sliding
+RIVAL_BODY = (70, 130, 200)    # the rival's car: steel blue, easy to tell from yours
+RIVAL_FRONT = (30, 60, 100)
+WRECK_BODY = (75, 72, 68)      # a wrecked car turns grey
+WRECK_FRONT = (45, 43, 40)
+HEALTH_GOOD = (120, 210, 110)  # health bar: green above 50%
+HEALTH_WARN = (230, 200, 60)   # yellow at 50% or less
+HEALTH_BAD = (225, 60, 50)     # red at 15% or less
+HEALTH_BACK = (55, 50, 46)     # the empty part of the bar

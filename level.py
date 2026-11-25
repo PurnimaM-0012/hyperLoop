@@ -8,7 +8,7 @@
 # which stand on a '.' floor tile:
 #   S = where every loop starts        M = the machine (can span tiles)
 #   1-9 = machine parts, described in the level file's "parts" section
-#         (on a race TRACK the digits are checkpoints instead, see load_track)
+#         (on a race TRACK the digits are checkpoints instead, see Track)
 # The tile 'P' (portal) links the two areas of a two-area level.
 # On a track, '=' tiles are the start/finish line.
 #
@@ -85,41 +85,58 @@ def draw_tile_markings(surface, tile, tile_rect):
         pygame.draw.polygon(surface, settings.ROAD_ARROW, points)
 
 
-def load_track(track_id):
-    """Load a race track from levels/tracks/<track_id>.json.
+class Track:
+    """A race track, loaded from levels/tracks/<track_id>.json.
 
-    A track is just a text map, built with the same Area class as level maps,
-    so it uses the same tile legend. 'S' marks where the car starts, and
-    "start_angle" says which way it faces (0 = right, 90 = down).
-    '=' tiles are the finish line, and the digits 1, 2, 3... are invisible
-    CHECKPOINTS that must be driven through in that order before crossing
-    the line counts as a lap. Without them you could just reverse over the
-    line. Each checkpoint is usually a row of the same digit across the road.
-    Returns (name, area, start_angle, checkpoints), where checkpoints is a
-    list (checkpoint 1 first) of lists of tile rects.
+    A track is a text map, built with the same Area class as level maps, so
+    it uses the same tile legend. In the map:
+      S       where your car starts ("start_angle" says which way it faces:
+              0 = right, 90 = down, 180 = left, 270 = up)
+      =       the finish line
+      1 2 3   invisible CHECKPOINTS, to be driven through in that order
+              before crossing the line counts as a lap. Without them you
+              could just reverse over the line. Each is usually a row of
+              the same digit across the road.
+    And in the file, besides the map:
+      "rival_starts"  [column, row] of each rival car's start tile
+      "waypoints"     [column, row] points along the racing line, in order,
+                      that rivals steer towards (see rival.py)
     """
-    file_name = os.path.join("tracks", track_id + ".json")
-    with open(os.path.join(settings.LEVELS_DIR, file_name)) as file:
-        data = json.load(file)
-    area = Area(track_id, data["map"], load_tile_types(), file_name)
-    if area.start_tile is None:
-        raise ValueError(f"{file_name}: the track needs an S (car start)")
-    if not area.finish_tiles:
-        raise ValueError(f"{file_name}: the track needs a finish line (= tiles)")
 
-    # Group the digit tiles by digit: {"1": [rect, rect...], "2": [...]}.
-    # Area stores digits in part_tiles because on a level they are parts.
-    by_digit = {}
-    for symbol, tile_rect in area.part_tiles:
-        by_digit.setdefault(symbol, []).append(tile_rect)
-    digits = sorted(by_digit)
-    # They must be 1, 2, 3... with no gaps, or a lap could never finish.
-    expected = [str(n) for n in range(1, len(digits) + 1)]
-    if digits != expected:
-        raise ValueError(f"{file_name}: checkpoints must be numbered 1, 2, 3... "
-                         f"with no gaps (found {digits})")
-    checkpoints = [by_digit[digit] for digit in digits]
-    return data["name"], area, data.get("start_angle", 0), checkpoints
+    def __init__(self, track_id):
+        file_name = os.path.join("tracks", track_id + ".json")
+        with open(os.path.join(settings.LEVELS_DIR, file_name)) as file:
+            data = json.load(file)
+        self.name = data["name"]
+        self.area = Area(track_id, data["map"], load_tile_types(), file_name)
+        self.start_angle = data.get("start_angle", 0)
+        if self.area.start_tile is None:
+            raise ValueError(f"{file_name}: the track needs an S (car start)")
+        if not self.area.finish_tiles:
+            raise ValueError(f"{file_name}: the track needs a finish line (= tiles)")
+
+        # Group the digit tiles by digit: {"1": [rect, rect...], "2": [...]}.
+        # Area stores digits in part_tiles because on a level they are parts.
+        by_digit = {}
+        for symbol, tile_rect in self.area.part_tiles:
+            by_digit.setdefault(symbol, []).append(tile_rect)
+        digits = sorted(by_digit)
+        # They must be 1, 2, 3... with no gaps, or a lap could never finish.
+        expected = [str(n) for n in range(1, len(digits) + 1)]
+        if digits != expected:
+            raise ValueError(f"{file_name}: checkpoints must be numbered 1, 2, 3... "
+                             f"with no gaps (found {digits})")
+        # A list, checkpoint 1 first, of lists of tile rects.
+        self.checkpoints = [by_digit[digit] for digit in digits]
+
+        # Rivals: where each one starts (the centre of its tile), and the
+        # waypoints they all follow.
+        size = settings.TILE_SIZE
+        self.rival_starts = [(col * size + size / 2, row * size + size / 2)
+                             for col, row in data.get("rival_starts", [])]
+        self.waypoints = data.get("waypoints", [])
+        if self.rival_starts and len(self.waypoints) < 2:
+            raise ValueError(f"{file_name}: rivals need at least 2 \"waypoints\" to follow")
 
 
 class Area:
