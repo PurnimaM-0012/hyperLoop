@@ -225,6 +225,11 @@ class LevelScene:
         # A replay is playing any level other than the one you're up to.
         # Replays don't show sub-parts built in other levels on the machine.
         self.is_replay = (level_id != self.progress.current_level)
+        # Race bonuses only count on your FIRST visit to a level, before you
+        # leave it cleared (design doc). Checked once, when the visit starts,
+        # so racing from the "cleared" screen of that same visit still counts,
+        # but a replay of a cleared level is only practice.
+        self.bonus_counts = level_id not in self.progress.cleared_levels
 
         self.camera = Camera()
         self.state = LevelScene.PLAYING
@@ -245,6 +250,11 @@ class LevelScene:
     def loop_length(self):
         """This level's loop length, worked out from Progress (see progress.py)."""
         return self.progress.loop_length(self.level.id, self.level.loop_cap)
+
+    def can_race(self):
+        """True if this level has a race and you haven't had this loop's yet.
+        (The Prison has no race: its level file has "track": null.)"""
+        return self.level.track is not None and not self.race_done
 
     def race_slot(self):
         """The race gets the last 40% of the loop: 32 s of an 80 s loop."""
@@ -317,7 +327,10 @@ class LevelScene:
 
     def record_race_win(self, bonus):
         """Called by the RaceScene on a win. Keeps the bonus if it's this
-        level's best, and saves at once. Returns True for a new best."""
+        level's best, and saves at once. Returns True for a new best.
+        A practice race (a replay of a cleared level) changes nothing."""
+        if not self.bonus_counts:
+            return False
         new_best = self.progress.record_race_win(self.level.id, bonus)
         self.progress.save(settings.SAVE_PATH)
         return new_best
@@ -360,7 +373,9 @@ class LevelScene:
             self.drop_item()
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_c:
             # Skip to the race: the time until the race slot is lost.
-            if self.race_done:
+            if self.level.track is None:
+                self.show_message("There's no race in this level")
+            elif self.race_done:
                 self.show_message("Only one race per loop")
             else:
                 self.time_loop.time_left = self.race_slot()
@@ -372,7 +387,7 @@ class LevelScene:
             self.progress.bag_capacity += 1
             self.player.bag.capacity = self.progress.bag_capacity
             self.show_message(f"Bag: {self.player.bag.capacity} slots")
-        elif self.state == LevelScene.CLEARED and event.key == pygame.K_r and not self.race_done:
+        elif self.state == LevelScene.CLEARED and event.key == pygame.K_r and self.can_race():
             # Sub-part built before the race: you may still race for the bonus.
             self.start_race()
         elif self.state == LevelScene.CLEARED and event.key == pygame.K_RETURN:
@@ -401,7 +416,7 @@ class LevelScene:
             # Count down; update() returns True on the frame time runs out.
             elif self.time_loop.update(dt):
                 self.reset_loop()
-            elif not self.race_done and self.time_loop.time_left <= self.race_slot():
+            elif self.can_race() and self.time_loop.time_left <= self.race_slot():
                 # The race slot has begun: ask. Snap the clock to exactly the
                 # slot so the race gets its full time, whatever the frame timing.
                 # In RACE_PROMPT this method stops counting down, so the timer
@@ -485,7 +500,7 @@ class LevelScene:
             name += " - " + self.area_name.replace("_", " ").capitalize()
         level_text = fonts["small"].render(name, True, settings.TEXT)
         screen.blit(level_text, (16, 36))
-        if not self.race_done:
+        if self.can_race():
             hint = fonts["small"].render("C: race now", True, settings.DIM_TEXT)
             screen.blit(hint, (level_text.get_width() + 32, 36))
 
@@ -531,7 +546,7 @@ class LevelScene:
             hint_text = "Enter: back to the menu"
         hint = fonts["small"].render(hint_text, True, settings.TEXT)
         screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 50)))
-        if not self.race_done:
+        if self.can_race():
             race = fonts["small"].render("R: race for a time bonus first", True, settings.HIGHLIGHT)
             screen.blit(race, race.get_rect(center=(centre_x, centre_y + 78)))
 
@@ -708,7 +723,9 @@ class RaceScene:
             title, colour = "You won!", settings.WIN
             lap = self.slot - self.time_left
             lines = [f"Lap {lap:.1f} s.  Bonus: {self.slot:.1f} + {self.time_left:.1f} = {self.bonus:.1f} s"]
-            if self.new_best:
+            if not self.return_to.bonus_counts:
+                lines.append("Practice: this level is already cleared, so loops don't get longer")
+            elif self.new_best:
                 lines.append(f"New best! Loops here now last {format_time(self.return_to.loop_length())}")
             else:
                 best = self.game.progress.best_bonus[self.return_to.level.id]

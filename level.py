@@ -208,9 +208,10 @@ class Level:
         with open(level_path(level_id)) as file:
             data = json.load(file)
         self.name = data["name"]
-        # The level's race track (levels/tracks/<track>.json) and its loop
-        # cap: the longest a loop can ever get in this level, however good
-        # your race bonuses (see Progress.loop_length).
+        # The level's race track (levels/tracks/<track>.json), or None
+        # ("track": null) for a level with no race, like the Prison. And its
+        # loop cap: the longest a loop can ever get in this level, however
+        # good your race bonuses (see Progress.loop_length).
         self.track = data["track"]
         self.loop_cap = data["loop_cap"]
         tile_types = load_tile_types()

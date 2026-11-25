@@ -1,7 +1,8 @@
 {
   "name": "Prison",
-  "track": "test_track",
-  "loop_cap": 160,
+  "_race": "The Prison has no race (design doc): track is null, and the loop stays 80 s.",
+  "track": null,
+  "loop_cap": 80,
   "parts": {
     "1": {"name": "Power cell", "colour": [235, 200, 70]},
     "2": {"name": "Flux coil", "colour": [80, 200, 220]},
