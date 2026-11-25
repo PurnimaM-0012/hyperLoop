@@ -4,7 +4,8 @@
 #   update(dt)           - move things forward by dt seconds
 #   draw(screen)         - draw itself
 # main.py just runs whichever scene is current. To change screens, a scene
-# sets game.scene to a new scene. Later steps add a RaceScene the same way.
+# sets game.scene to a new scene. A race works the same way: the level
+# hands itself to the RaceScene, which hands control back when it's over.
 
 import math
 import random
@@ -190,8 +191,18 @@ def update_parts(player, parts, machine):
             machine.install(part)
 
 
+def darken(screen):
+    """Dim everything already drawn, so an overlay's text stands out."""
+    # SRCALPHA gives the surface see-through pixels; the 4th number
+    # in the colour is opacity (0 = invisible, 255 = solid).
+    shade = pygame.Surface((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT), pygame.SRCALPHA)
+    shade.fill((0, 0, 0, 170))
+    screen.blit(shade, (0, 0))
+
+
 class LevelScene:
     PLAYING = "playing"
+    RACE_PROMPT = "race_prompt"  # "Race? Y / N" is on screen; the timer is paused
     CLEARED = "cleared"
 
     def __init__(self, game, level_id):
@@ -203,7 +214,9 @@ class LevelScene:
         # The bag's SIZE is persistent (it grows as you clear levels); its
         # loop items (parts) are emptied by every loop reset.
         self.player = Player(self.level.start, Bag(self.progress.bag_capacity))
-        self.time_loop = TimeLoop(self.progress.loop_duration)
+        self.time_loop = TimeLoop(self.loop_length())
+        # One race per loop: set once you race (or say no), cleared by reset_loop().
+        self.race_done = False
         self.area_name = self.level.start_area  # the area (map) the player is in
         # A portal only works once you've stepped OFF a portal. Without this,
         # you'd arrive standing on the other portal and bounce straight back.
@@ -229,6 +242,14 @@ class LevelScene:
         variable (self.area) but works it out each time it's used."""
         return self.level.areas[self.area_name]
 
+    def loop_length(self):
+        """This level's loop length, worked out from Progress (see progress.py)."""
+        return self.progress.loop_length(self.level.id, self.level.loop_cap)
+
+    def race_slot(self):
+        """The race gets the last 40% of the loop: 32 s of an 80 s loop."""
+        return settings.RACE_SHARE * self.time_loop.duration
+
     def show_message(self, text, colour=settings.TEXT):
         self.message_text, self.message_colour = text, colour
         self.message_time_left = settings.MESSAGE_TIME
@@ -238,9 +259,10 @@ class LevelScene:
         self.area_name = self.level.start_area  # every loop starts at the machine
         self.player.reset()  # back to S; parts leave the bag (they go home below)
         self.portal_ready = True
-        # Each new loop lasts as long as Progress says, so race wins
-        # (and the debug key T) make the NEXT loop longer.
-        self.time_loop.duration = self.progress.loop_duration
+        self.race_done = False  # a new loop brings a new race
+        # Each new loop lasts as long as Progress says, so race wins make
+        # the NEXT loop longer.
+        self.time_loop.duration = self.loop_length()
         self.time_loop.reset()
         self.level.machine.reset()
         for part in self.level.parts:
@@ -285,6 +307,38 @@ class LevelScene:
             self.next_level = self.progress.current_level
         self.state = LevelScene.CLEARED
 
+    # ---------------- racing ----------------
+
+    def start_race(self):
+        """Hand over to the race track. This scene waits, paused, until
+        the RaceScene calls race_over()."""
+        self.race_done = True
+        self.game.scene = RaceScene(self.game, self, self.level.track, self.race_slot())
+
+    def record_race_win(self, bonus):
+        """Called by the RaceScene on a win. Keeps the bonus if it's this
+        level's best, and saves at once. Returns True for a new best."""
+        new_best = self.progress.record_race_win(self.level.id, bonus)
+        self.progress.save(settings.SAVE_PATH)
+        return new_best
+
+    def race_over(self, won, bonus):
+        """Called by the RaceScene when the player leaves the result screen."""
+        self.game.scene = self
+        if self.state == LevelScene.CLEARED:
+            return  # raced after clearing the level: back to the cleared screen
+        self.state = LevelScene.PLAYING
+        if won:
+            # Future loops are longer (if this was a new best)...
+            self.time_loop.duration = self.loop_length()
+            # ...and THIS loop goes on, with the clock SET to the bonus
+            # (not the time left + the bonus: the race used up that time).
+            self.time_loop.time_left = bonus
+            self.show_message(f"{format_time(bonus)} on the clock", settings.WIN)
+        else:
+            # The race was the end of the loop: no time is left.
+            self.reset_loop()
+
     # ---------------- the three scene methods ----------------
 
     def handle_event(self, event):
@@ -295,13 +349,22 @@ class LevelScene:
         elif event.key == pygame.K_F5:             # save progress
             self.progress.save(settings.SAVE_PATH)
             self.show_message("Game saved")
+        elif self.state == LevelScene.RACE_PROMPT:
+            if event.key == pygame.K_y:
+                self.start_race()
+            elif event.key == pygame.K_n:
+                # No race this loop: stay in town until the loop ends.
+                self.race_done = True
+                self.state = LevelScene.PLAYING
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_q:
             self.drop_item()
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_c:
-            # DEBUG (Step 9): try the car on the test track. This level scene
-            # is handed over, so coming back resumes it exactly as it was.
-            # While the race scene runs, this scene isn't updated: its timer pauses.
-            self.game.scene = RaceScene(self.game, return_to=self)
+            # Skip to the race: the time until the race slot is lost.
+            if self.race_done:
+                self.show_message("Only one race per loop")
+            else:
+                self.time_loop.time_left = self.race_slot()
+                self.start_race()
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_r:
             self.reset_loop()                      # DEBUG: reset right away
         elif self.state == LevelScene.PLAYING and event.key == pygame.K_b:
@@ -309,13 +372,9 @@ class LevelScene:
             self.progress.bag_capacity += 1
             self.player.bag.capacity = self.progress.bag_capacity
             self.show_message(f"Bag: {self.player.bag.capacity} slots")
-        elif self.state == LevelScene.PLAYING and event.key == pygame.K_t:
-            # DEBUG: pretend you won a race. Like a real race win, it adds
-            # time to the loop running NOW and makes every FUTURE loop longer.
-            self.progress.add_loop_time(settings.DEBUG_RACE_BONUS)
-            self.time_loop.time_left += settings.DEBUG_RACE_BONUS
-            self.time_loop.duration = self.progress.loop_duration
-            self.show_message(f"+{settings.DEBUG_RACE_BONUS} s now and on future loops")
+        elif self.state == LevelScene.CLEARED and event.key == pygame.K_r and not self.race_done:
+            # Sub-part built before the race: you may still race for the bonus.
+            self.start_race()
         elif self.state == LevelScene.CLEARED and event.key == pygame.K_RETURN:
             if self.next_level is not None:
                 self.game.scene = LevelScene(self.game, self.next_level)
@@ -342,6 +401,13 @@ class LevelScene:
             # Count down; update() returns True on the frame time runs out.
             elif self.time_loop.update(dt):
                 self.reset_loop()
+            elif not self.race_done and self.time_loop.time_left <= self.race_slot():
+                # The race slot has begun: ask. Snap the clock to exactly the
+                # slot so the race gets its full time, whatever the frame timing.
+                # In RACE_PROMPT this method stops counting down, so the timer
+                # is paused while the question is on screen.
+                self.time_loop.time_left = self.race_slot()
+                self.state = LevelScene.RACE_PROMPT
 
         self.message_time_left = max(0, self.message_time_left - dt)
 
@@ -378,7 +444,9 @@ class LevelScene:
 
         # SCREEN things (they don't scroll): the HUD and the overlays.
         self.draw_hud(screen)
-        if self.state == LevelScene.CLEARED:
+        if self.state == LevelScene.RACE_PROMPT:
+            self.draw_race_prompt(screen)
+        elif self.state == LevelScene.CLEARED:
             self.draw_cleared(screen)
         if self.message_time_left > 0:
             message = self.game.fonts["medium"].render(self.message_text, True, self.message_colour)
@@ -407,7 +475,7 @@ class LevelScene:
         # get_rect(midtop=...) positions the text by its top-centre point.
         timer_rect = timer_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 4))
         screen.blit(timer_text, timer_rect)
-        loop_text = fonts["small"].render(f"Loop: {format_time(self.progress.loop_duration)}",
+        loop_text = fonts["small"].render(f"Loop: {format_time(self.time_loop.duration)}",
                                           True, settings.DIM_TEXT)
         screen.blit(loop_text, loop_text.get_rect(midtop=(timer_rect.centerx, timer_rect.bottom)))
 
@@ -417,6 +485,9 @@ class LevelScene:
             name += " - " + self.area_name.replace("_", " ").capitalize()
         level_text = fonts["small"].render(name, True, settings.TEXT)
         screen.blit(level_text, (16, 36))
+        if not self.race_done:
+            hint = fonts["small"].render("C: race now", True, settings.DIM_TEXT)
+            screen.blit(hint, (level_text.get_width() + 32, 36))
 
         # Right: the bag's slots, the parts counter beside them, and below,
         # the names of what's in the bag.
@@ -434,13 +505,21 @@ class LevelScene:
         bag_text = fonts["small"].render(names, True, settings.DIM_TEXT)
         screen.blit(bag_text, bag_text.get_rect(topright=(right, 36)))
 
+    def draw_race_prompt(self, screen):
+        fonts = self.game.fonts
+        darken(screen)
+        centre_x, centre_y = settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2
+        title = fonts["big"].render("Race?", True, settings.HIGHLIGHT)
+        screen.blit(title, title.get_rect(center=(centre_x, centre_y - 30)))
+        lines = [f"Y: race, with {format_time(self.time_loop.time_left)} to finish a lap",
+                 "N: stay in town until the loop ends"]
+        for i, line in enumerate(lines):
+            text = fonts["small"].render(line, True, settings.TEXT)
+            screen.blit(text, text.get_rect(center=(centre_x, centre_y + 22 + i * 28)))
+
     def draw_cleared(self, screen):
         fonts = self.game.fonts
-        # SRCALPHA gives the surface see-through pixels; the 4th number
-        # in the colour is opacity (0 = invisible, 255 = solid).
-        shade = pygame.Surface((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, 170))
-        screen.blit(shade, (0, 0))
+        darken(screen)
         centre_x, centre_y = settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2
         title = fonts["big"].render(f"{self.level.name} cleared!", True, settings.WIN)
         screen.blit(title, title.get_rect(center=(centre_x, centre_y - 30)))
@@ -452,19 +531,37 @@ class LevelScene:
             hint_text = "Enter: back to the menu"
         hint = fonts["small"].render(hint_text, True, settings.TEXT)
         screen.blit(hint, hint.get_rect(center=(centre_x, centre_y + 50)))
+        if not self.race_done:
+            race = fonts["small"].render("R: race for a time bonus first", True, settings.HIGHLIGHT)
+            screen.blit(race, race.get_rect(center=(centre_x, centre_y + 78)))
 
 
 # =====================================================================
-#  RACING (Step 9: just the car on a test track; race rules come later)
+#  RACING (Step 10: one lap against the clock; the rival comes in Step 11)
 # =====================================================================
 
 class RaceScene:
-    def __init__(self, game, return_to, track_id="test_track"):
+    RACING = "racing"
+    WON = "won"          # crossed the line after every checkpoint, in time
+    LOST = "lost"        # the race slot ran out, or the player gave up
+
+    def __init__(self, game, return_to, track_id, slot):
         self.game = game
-        self.return_to = return_to  # the scene to go back to (a paused level)
-        self.track_name, self.track, start_angle = load_track(track_id)
+        self.return_to = return_to  # the paused LevelScene; we report back to it
+        self.track_name, self.track, start_angle, self.checkpoints = load_track(track_id)
         self.car = Car(self.track.start_tile.center, start_angle)
         self.camera = Camera()
+
+        # The race clock. The race slot is the time left in the loop, so
+        # running out here means the loop is over.
+        self.slot = slot
+        self.time_left = slot
+        # Index of the next checkpoint to drive through (0 = checkpoint 1).
+        # When it equals len(self.checkpoints), the finish line counts.
+        self.next_checkpoint = 0
+        self.state = RaceScene.RACING
+        self.bonus = 0
+        self.new_best = False
 
         # Skid marks are drawn straight onto a copy of the track picture, so
         # they stay forever (for this visit) and cost nothing to redraw.
@@ -472,27 +569,65 @@ class RaceScene:
         # Dust puffs: each is [x, y, velocity_x, velocity_y, seconds_left].
         self.dust = []
 
+    # ---------------- race rules ----------------
+
+    def check_progress(self):
+        """Checkpoints in order, then the finish line."""
+        car_box = self.car.rect
+        if self.next_checkpoint < len(self.checkpoints):
+            # collidelist() gives the index of the first rect touched, or -1.
+            if car_box.collidelist(self.checkpoints[self.next_checkpoint]) != -1:
+                self.next_checkpoint += 1
+        elif car_box.collidelist(self.track.finish_tiles) != -1:
+            self.win()
+
+    def win(self):
+        # Design doc: bonus = the race slot + the time left in it at the finish.
+        # A 32 s slot finished in 16 s earns 32 + 16 = 48 s.
+        self.bonus = round(self.slot + self.time_left, 1)
+        self.new_best = self.return_to.record_race_win(self.bonus)
+        self.end(RaceScene.WON)
+
+    def end(self, result):
+        self.state = result
+        self.game.tuning.close()  # so Enter goes to the result screen, not the panel
+
+    # ---------------- the three scene methods ----------------
+
     def handle_event(self, event):
         # The live tuning panel gets first look at every key (see tuning.py).
         if self.game.tuning.handle_event(event):
             return
-        if event.type == pygame.KEYDOWN and event.key in (pygame.K_c, pygame.K_ESCAPE):
-            self.game.tuning.close()
-            self.game.scene = self.return_to  # resume the level where we left it
+        if event.type != pygame.KEYDOWN:
+            return
+        if self.state == RaceScene.RACING and event.key == pygame.K_ESCAPE:
+            self.end(RaceScene.LOST)  # giving up counts as running out of time
+        elif self.state != RaceScene.RACING and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.return_to.race_over(self.state == RaceScene.WON, self.bonus)
 
     def update(self, dt):
-        # Read the controls. key.get_pressed() says which keys are HELD now.
-        keys = pygame.key.get_pressed()
-        throttle = keys[pygame.K_w] or keys[pygame.K_UP]
-        brake = keys[pygame.K_s] or keys[pygame.K_DOWN]
+        throttle = brake = handbrake = False
         steer = 0
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            steer -= 1
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            steer += 1
-        handbrake = keys[pygame.K_SPACE]
-
+        if self.state == RaceScene.RACING:
+            self.time_left -= dt
+            if self.time_left <= 0:
+                self.time_left = 0
+                self.end(RaceScene.LOST)
+            else:
+                # Read the controls. key.get_pressed() says which keys are HELD now.
+                keys = pygame.key.get_pressed()
+                throttle = keys[pygame.K_w] or keys[pygame.K_UP]
+                brake = keys[pygame.K_s] or keys[pygame.K_DOWN]
+                if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                    steer -= 1
+                if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                    steer += 1
+                handbrake = keys[pygame.K_SPACE]
+        # After the race the car keeps rolling with no input, so it coasts
+        # to a stop behind the result screen instead of freezing.
         impact = self.car.update(dt, throttle, brake, steer, handbrake, self.track)
+        if self.state == RaceScene.RACING:
+            self.check_progress()
 
         # Game feel: the camera aims slightly AHEAD of the car (where it will be
         # in a moment), so you see more of the road you're driving towards.
@@ -532,17 +667,64 @@ class RaceScene:
             pygame.draw.circle(screen, settings.DUST, spot, 2 + life * 6)  # shrinks as it fades
         car.draw(screen, camera)
         self.draw_hud(screen)
+        if self.state != RaceScene.RACING:
+            self.draw_result(screen)
         self.game.tuning.draw(screen, self.game.fonts)
 
     def draw_hud(self, screen):
         fonts = self.game.fonts
         pygame.draw.rect(screen, settings.HUD_BAR, (0, 0, settings.SCREEN_WIDTH, settings.HUD_HEIGHT))
-        name = fonts["small"].render(f"{self.track_name} (testing)", True, settings.TEXT)
+        name = fonts["small"].render(self.track_name, True, settings.TEXT)
         screen.blit(name, (16, 36))
+
+        # Centre: the race clock, red in the last few seconds, and what's next.
+        colour = settings.TIMER_WARNING if self.time_left <= settings.WARNING_TIME else settings.TEXT
+        clock = fonts["timer"].render(format_time(self.time_left), True, colour)
+        clock_rect = clock.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 4))
+        screen.blit(clock, clock_rect)
+        if self.next_checkpoint < len(self.checkpoints):
+            goal = f"Checkpoint {self.next_checkpoint + 1} of {len(self.checkpoints)}"
+        else:
+            goal = "To the finish line!"
+        goal_text = fonts["small"].render(goal, True, settings.DIM_TEXT)
+        screen.blit(goal_text, goal_text.get_rect(midtop=(clock_rect.centerx, clock_rect.bottom)))
+
+        # Right: the controls, and the speed under them.
+        right = settings.SCREEN_WIDTH - 16
+        hint = fonts["small"].render("WASD drive   Space drift   Tab tune   Esc give up",
+                                     True, settings.DIM_TEXT)
+        screen.blit(hint, hint.get_rect(topright=(right, 12)))
         # Total speed (length of the velocity), so sliding sideways still counts.
         speed = self.car.velocity.length() * settings.SPEED_DISPLAY_SCALE
-        speed_text = fonts["timer"].render(f"{speed:3.0f} km/h", True, settings.TEXT)
-        screen.blit(speed_text, speed_text.get_rect(midtop=(settings.SCREEN_WIDTH // 2, 8)))
-        hint = fonts["small"].render("WASD drive   Space drift   Tab tune   C back",
-                                     True, settings.DIM_TEXT)
-        screen.blit(hint, hint.get_rect(topright=(settings.SCREEN_WIDTH - 16, 12)))
+        speed_text = fonts["small"].render(f"{speed:3.0f} km/h", True, settings.TEXT)
+        screen.blit(speed_text, speed_text.get_rect(topright=(right, 36)))
+
+    def draw_result(self, screen):
+        fonts = self.game.fonts
+        darken(screen)
+        centre_x, centre_y = settings.SCREEN_WIDTH // 2, settings.SCREEN_HEIGHT // 2
+        after_clearing = (self.return_to.state == LevelScene.CLEARED)
+        if self.state == RaceScene.WON:
+            title, colour = "You won!", settings.WIN
+            lap = self.slot - self.time_left
+            lines = [f"Lap {lap:.1f} s.  Bonus: {self.slot:.1f} + {self.time_left:.1f} = {self.bonus:.1f} s"]
+            if self.new_best:
+                lines.append(f"New best! Loops here now last {format_time(self.return_to.loop_length())}")
+            else:
+                best = self.game.progress.best_bonus[self.return_to.level.id]
+                lines.append(f"Your best is still {best:.1f} s, so loops don't get longer")
+            if after_clearing:
+                lines.append("Enter: back")
+            else:
+                lines.append(f"Enter: back to town with {format_time(self.bonus)} on the clock")
+        else:
+            title, colour = "Out of time!", settings.TIMER_WARNING
+            if after_clearing:
+                lines = ["No bonus this time.", "Enter: back"]
+            else:
+                lines = ["No bonus. The loop resets.", "Enter: back to the start of the loop"]
+        title_text = fonts["big"].render(title, True, colour)
+        screen.blit(title_text, title_text.get_rect(center=(centre_x, centre_y - 40)))
+        for i, line in enumerate(lines):
+            text = fonts["small"].render(line, True, settings.TEXT)
+            screen.blit(text, text.get_rect(center=(centre_x, centre_y + 14 + i * 28)))

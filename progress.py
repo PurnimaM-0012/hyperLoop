@@ -10,7 +10,7 @@ import os
 
 import settings
 
-SAVE_VERSION = 1  # bump this if the save format ever changes
+SAVE_VERSION = 2  # bump this if the save format ever changes (2: best_bonus per level)
 
 
 class Progress:
@@ -19,18 +19,39 @@ class Progress:
 
     def new_game(self):
         """Wipe everything back to the start of a brand-new game."""
-        self.loop_duration = settings.START_LOOP_DURATION  # seconds per loop
         self.current_level = settings.LEVEL_ORDER[0]      # the level being played
         self.cleared_levels = []    # levels whose sub-part is built, in order
         self.bag_capacity = settings.START_BAG_CAPACITY
         self.utilities = []         # utilities owned (Step 13)
-        self.races_won = []         # races already won once (Step 10)
+        # Each level's BEST race bonus in seconds, e.g. {"prison": 34}.
+        # We keep only the best, never a running total, so bonuses don't
+        # stack: racing again only helps if you beat your best.
+        self.best_bonus = {}
+
+    # ---------------- Loop length ----------------
+
+    def loop_length(self, level_id, loop_cap):
+        """How long a loop lasts in this level, in seconds.
+
+        Rule (design doc): 80 s + the best race bonuses of this level and
+        every level BEFORE it, capped at this level's maximum.
+        It is worked out fresh from best_bonus every time, never stored,
+        so it can't drift out of step with the rule. That also makes
+        replays fair: later levels' bonuses aren't counted.
+        """
+        index = settings.LEVEL_ORDER.index(level_id)
+        levels_so_far = settings.LEVEL_ORDER[:index + 1]  # this level and earlier ones
+        bonuses = sum(self.best_bonus.get(lid, 0) for lid in levels_so_far)
+        return min(settings.START_LOOP_DURATION + bonuses, loop_cap)
 
     # ---------------- Changing progress ----------------
 
-    def add_loop_time(self, seconds):
-        """Make every FUTURE loop longer (race wins call this)."""
-        self.loop_duration += seconds
+    def record_race_win(self, level_id, bonus):
+        """Remember a race win. Returns True if it beat the level's best."""
+        if bonus > self.best_bonus.get(level_id, 0):
+            self.best_bonus[level_id] = bonus
+            return True
+        return False
 
     def clear_level(self, level_id):
         """Record that a level's sub-part is built, and move to the next level."""
@@ -54,12 +75,11 @@ class Progress:
     def to_dict(self):
         return {
             "version": SAVE_VERSION,
-            "loop_duration": self.loop_duration,
             "current_level": self.current_level,
             "cleared_levels": self.cleared_levels,
             "bag_capacity": self.bag_capacity,
             "utilities": self.utilities,
-            "races_won": self.races_won,
+            "best_bonus": self.best_bonus,
         }
 
     def save(self, path):
@@ -81,12 +101,13 @@ class Progress:
                 data = json.load(file)
             # .get(key, default) keeps the new-game value if a key is missing,
             # so an older or hand-edited save file can't crash the game.
-            progress.loop_duration = data.get("loop_duration", progress.loop_duration)
             progress.current_level = data.get("current_level", progress.current_level)
             progress.cleared_levels = data.get("cleared_levels", [])
             progress.bag_capacity = data.get("bag_capacity", progress.bag_capacity)
             progress.utilities = data.get("utilities", [])
-            progress.races_won = data.get("races_won", [])
+            # Saves before Step 10 stored one running "loop_duration" instead.
+            # It's ignored: loop length is now worked out from best_bonus.
+            progress.best_bonus = data.get("best_bonus", {})
             # Saves made before Step 8 cleared levels without growing the
             # bag. Make sure the bag is at least as big as the rule says.
             # (Fixing up old saves like this is called a "migration".)

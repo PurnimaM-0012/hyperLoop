@@ -38,7 +38,10 @@ START_BAG_CAPACITY = 1    # bag slots at the start of a new game
 BAG_SLOTS_PER_LEVEL = 1   # extra slots for each level cleared (subject to change)
 # Fixed level order = file names in levels/ (prison -> levels/prison.json).
 LEVEL_ORDER = ["prison", "research_facility"]
-DEBUG_RACE_BONUS = 20     # seconds the debug key T adds now and to future loops ("pretend I won a race")
+
+# --- Racing rules (Step 10) ---
+RACE_SHARE = 0.4  # the race is the last 40% of the loop: 32 s of an 80 s loop
+# Each level's loop cap is in its level file ("loop_cap"), since it's level content.
 
 # --- Time loop ---
 WARNING_TIME = 10         # the timer turns red at or below this many seconds

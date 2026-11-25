@@ -9,11 +9,13 @@
 #                   Q              drop the last item picked up
 #                   Esc            menu          R    DEBUG: reset the loop now
 #                   B              DEBUG: one more bag slot
-#                   C              DEBUG: drive the car on the test track (C or Esc to come back)
+#                   C              skip to the race now (the time until the race slot is lost)
+#                   Y / N          answer "Race?" when the race slot (last 40% of the loop) begins
+#                   R              on the "cleared" screen: race for a time bonus first
 #
 # Keys on the track: W/S throttle and brake, A/D steer, Space handbrake (drift)
+#                    Esc give up (no bonus)   Enter leave the result screen
 #                    Tab live tuning panel ([ ] choose, - = change, Backspace reset, F6 save)
-#                   T              DEBUG: pretend you won a race (+20 s now and on future loops)
 
 import os
 

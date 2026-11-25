@@ -8,7 +8,9 @@
 # which stand on a '.' floor tile:
 #   S = where every loop starts        M = the machine (can span tiles)
 #   1-9 = machine parts, described in the level file's "parts" section
+#         (on a race TRACK the digits are checkpoints instead, see load_track)
 # The tile 'P' (portal) links the two areas of a two-area level.
+# On a track, '=' tiles are the start/finish line.
 #
 # Two level-file layouts are allowed:
 #   one area:   {"name": ..., "parts": {...}, "map": [rows...]}
@@ -26,6 +28,7 @@ from machine import Machine, Part
 
 FLOOR_UNDER_OBJECTS = "."
 PORTAL = "P"
+FINISH_LINE = "="
 
 
 def level_path(level_id):
@@ -88,7 +91,12 @@ def load_track(track_id):
     A track is just a text map, built with the same Area class as level maps,
     so it uses the same tile legend. 'S' marks where the car starts, and
     "start_angle" says which way it faces (0 = right, 90 = down).
-    Returns (name, area, start_angle).
+    '=' tiles are the finish line, and the digits 1, 2, 3... are invisible
+    CHECKPOINTS that must be driven through in that order before crossing
+    the line counts as a lap. Without them you could just reverse over the
+    line. Each checkpoint is usually a row of the same digit across the road.
+    Returns (name, area, start_angle, checkpoints), where checkpoints is a
+    list (checkpoint 1 first) of lists of tile rects.
     """
     file_name = os.path.join("tracks", track_id + ".json")
     with open(os.path.join(settings.LEVELS_DIR, file_name)) as file:
@@ -96,7 +104,22 @@ def load_track(track_id):
     area = Area(track_id, data["map"], load_tile_types(), file_name)
     if area.start_tile is None:
         raise ValueError(f"{file_name}: the track needs an S (car start)")
-    return data["name"], area, data.get("start_angle", 0)
+    if not area.finish_tiles:
+        raise ValueError(f"{file_name}: the track needs a finish line (= tiles)")
+
+    # Group the digit tiles by digit: {"1": [rect, rect...], "2": [...]}.
+    # Area stores digits in part_tiles because on a level they are parts.
+    by_digit = {}
+    for symbol, tile_rect in area.part_tiles:
+        by_digit.setdefault(symbol, []).append(tile_rect)
+    digits = sorted(by_digit)
+    # They must be 1, 2, 3... with no gaps, or a lap could never finish.
+    expected = [str(n) for n in range(1, len(digits) + 1)]
+    if digits != expected:
+        raise ValueError(f"{file_name}: checkpoints must be numbered 1, 2, 3... "
+                         f"with no gaps (found {digits})")
+    checkpoints = [by_digit[digit] for digit in digits]
+    return data["name"], area, data.get("start_angle", 0), checkpoints
 
 
 class Area:
@@ -115,7 +138,8 @@ class Area:
         self.portal = None       # the rect of this area's P tile, if any
         self.start_tile = None   # the S tile, if this area has it
         self.machine_tiles = []  # the M tiles, if this area has the machine
-        self.part_tiles = []     # (symbol, tile rect) for each part digit
+        self.part_tiles = []     # (symbol, tile rect) for each digit (parts, or a track's checkpoints)
+        self.finish_tiles = []   # the '=' tiles (a race track's finish line)
         # The "speed" of every tile, row by row, so cars can ask how fast
         # they're allowed to go where they are (grass is slower than road).
         self.speed_grid = []
@@ -146,6 +170,8 @@ class Area:
                     if self.portal is not None:
                         raise ValueError(f"{where}: only one P (portal) per area")
                     self.portal = tile_rect
+                elif symbol == FINISH_LINE:
+                    self.finish_tiles.append(tile_rect)
 
                 if tile_symbol not in tile_types:
                     raise ValueError(f"{where}: unknown symbol '{symbol}'. "
@@ -182,6 +208,11 @@ class Level:
         with open(level_path(level_id)) as file:
             data = json.load(file)
         self.name = data["name"]
+        # The level's race track (levels/tracks/<track>.json) and its loop
+        # cap: the longest a loop can ever get in this level, however good
+        # your race bonuses (see Progress.loop_length).
+        self.track = data["track"]
+        self.loop_cap = data["loop_cap"]
         tile_types = load_tile_types()
 
         # --- Build the areas ---

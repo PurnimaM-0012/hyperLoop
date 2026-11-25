@@ -27,8 +27,10 @@ D:\Code_projects\Py\python\myvir\Scripts\Activate.ps1
 python main.py
 ```
 
-Keys in a level: WASD/arrows move, Q drop item, F5 save, Esc menu.
-Debug keys: R reset loop, T +20 s (now and future loops), B +1 bag slot.
+Keys in a level: WASD/arrows move, Q drop item, C skip to the race, Y/N answer "Race?",
+R race from the "cleared" screen, F5 save, Esc menu.
+On the track: WASD drive, Space drift, Tab tuning panel, Esc give up, Enter leave results.
+Debug keys: R reset loop, B +1 bag slot.
 
 ## Code map
 
@@ -36,7 +38,7 @@ Debug keys: R reset loop, T +20 s (now and future loops), B +1 bag slot.
 |---|---|
 | `main.py` | Window, `Game` object (fonts, progress, current scene), the game loop |
 | `scenes.py` | `MenuScene` and `LevelScene` (timer, `reset_loop()`, portals, parts, HUD) |
-| `level.py` | Loads levels from `levels/*.json`: areas (text maps), walls, parts, machine, portals |
+| `level.py` | Loads levels from `levels/*.json`: areas (text maps), walls, parts, machine, portals, each level's `track` and `loop_cap`; `load_track()` adds the finish line and checkpoints |
 | `levels/` | Level files, `areas/` maps, and `tiles.json` (the tile legend: symbol -> solid, colour, image) |
 | `player.py` | Movement with `dt`, axis-by-axis wall collision, `teleport()` |
 | `bag.py` | Limited-slot inventory; items have `kind` and `persistent` |
@@ -44,19 +46,20 @@ Debug keys: R reset loop, T +20 s (now and future loops), B +1 bag slot.
 | `camera.py` | World -> screen coordinates, follows the player, clamps at map edges; smooth follow and screen shake for racing |
 | `car.py` | Arcade car: angle + velocity, eased steering, grip/handbrake drift, grass slowdown, barrier bounce |
 | `tuning.py` | Live tuning panel on the track (Tab); F6 writes `tuning.txt` |
-| `levels/tracks/` | Race tracks as text maps (`=` start line, `>` `v` `<` `^` arrows, `,` grass) |
+| `levels/tracks/` | Race tracks as text maps (`=` start/finish line, digits `1` `2` `3` = checkpoints in order, `>` `v` `<` `^` arrows, `,` grass) |
 | `time_loop.py` | The countdown and `format_time()` |
-| `progress.py` | Persistent state (never touched by `reset_loop()`), saved to `save.json` |
+| `progress.py` | Persistent state (never touched by `reset_loop()`), saved to `save.json`; `best_bonus` per level, and `loop_length()` worked out from it |
 | `settings.py` | Every tunable number and colour |
 
 Key rule: **loop state** is reset by `reset_loop()`; **persistent state** lives only in `Progress`.
 
 ## Status
 
-Steps 1-9 done (loop, movement, timer, parts, progress/saving, levels/menu, research
-facility + portals + camera, bag, arcade car on a vertical test track with live
-tuning; debug key C opens it from a level). Next: Step 10 (race rules).
-Typing values in the tuning panel is done (Enter on a setting). Later: repairs/fuel/salvage, race rules, rival AI, weapons, utilities. See the design doc.
+Steps 1-10 done (loop, movement, timer, parts, progress/saving, levels/menu, research
+facility + portals + camera, bag, arcade car with live tuning, race rules: "Race? Y/N"
+at the 40% mark with the timer paused, 1 lap with checkpoints, bonus = slot + time left,
+best bonus per level, loop cap 160 s placeholder, skip to race, race after clearing).
+Next: Step 11 (rival AI). Later: repairs/fuel/salvage, weapons, utilities. See the design doc.
 
 ## Conventions
 

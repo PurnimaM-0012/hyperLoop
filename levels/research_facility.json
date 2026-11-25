@@ -1,5 +1,7 @@
 {
   "name": "Research Facility",
+  "track": "test_track",
+  "loop_cap": 160,
   "start_area": "machine_room",
   "areas": {
     "machine_room": "areas/machine_room.json",

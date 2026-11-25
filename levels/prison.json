@@ -1,5 +1,7 @@
 {
   "name": "Prison",
+  "track": "test_track",
+  "loop_cap": 160,
   "parts": {
     "1": {"name": "Power cell", "colour": [235, 200, 70]},
     "2": {"name": "Flux coil", "colour": [80, 200, 220]},
